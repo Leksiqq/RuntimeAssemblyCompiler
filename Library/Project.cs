@@ -1,6 +1,5 @@
 ﻿
 using System.Diagnostics;
-using System.Reflection;
 using System.Text;
 using System.Xml;
 using System.Xml.XPath;
@@ -13,8 +12,9 @@ public class Project: IDisposable
     private const string s_defaultTargetFramework = "net6.0-windows";
     private const string s_libraryOutputType = "Library";
     private const string s_exeOutputType = "Exe";
-    private const int s_packageItemGroup = 1;
-    private const int s_projectItemGroup = 2;
+    private const int s_packageItemGroup = 2;
+    private const int s_projectItemGroup = 3;
+    private const int s_contentItemGroup = 1;
     private const string s_projectFileName = "Project.csproj";
     private const string s_outputDirName = "bin";
 
@@ -63,8 +63,9 @@ public class Project: IDisposable
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <AssemblyName>{Name}</AssemblyName>
-        <RootNamespace>{Name}</RootNamespace>
     </PropertyGroup>
+    <ItemGroup/>
+    <ItemGroup/>
     <ItemGroup/>
     <ItemGroup/>
 </Project>");
@@ -115,6 +116,21 @@ public class Project: IDisposable
         }
     }
 
+    public void AddContent(string path)
+    {
+        if (
+            _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_contentItemGroup}]/Content[@Include=\"{path}\"]") is null
+        )
+        {
+            _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_contentItemGroup}]")!.AppendChild(@$"<Content Include=""{path}"">
+
+    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+</Content>");
+        }
+    }
+
     public bool Compile()
     {
         LibraryFile = null;
@@ -124,14 +140,14 @@ public class Project: IDisposable
 
         CreateProjectFile();
 
-        _includes.ForEach(p => p.CreateProjectFile());
+        _includes.ForEach(p => p.Compile());
 
         Process dotnet = new();
 
         dotnet.StartInfo = new()
         {
             FileName = "dotnet.exe",
-            Arguments = $"build \"{ProjectFileName}\" -c {Configuration} -o {outputDir}",
+            Arguments = $"build \"{ProjectFileName}\" -c {Configuration} -o {outputDir} --ucr",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             StandardOutputEncoding = LogEncoding,
