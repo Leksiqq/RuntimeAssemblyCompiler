@@ -18,8 +18,8 @@ public class Project: IDisposable
     private const string s_projectFileName = "Project.csproj";
     private const string s_outputDirName = "bin";
 
-    private readonly XmlDocument _project = new XmlDocument();
-    private readonly XPathNavigator _xpathNavigator;
+    private XmlDocument _project = new XmlDocument();
+    private XPathNavigator _xpathNavigator;
     private readonly List<Project> _includes = new();
 
     public string Name { get; private set; }
@@ -27,6 +27,19 @@ public class Project: IDisposable
     public bool IsTemporary { get; private set; }
     public string LastOutput { get; private set; } = string.Empty;
     public string LastError{ get; private set; } = string.Empty;
+
+    public XmlDocument ProjectXml
+    {
+        get => _project;
+        set
+        {
+            _project = value;
+            _xpathNavigator = _project.CreateNavigator()!;
+            _includes.Clear();
+            LastOutput = string.Empty;
+            LastError = string.Empty;
+        }
+    }
 
     public string Sdk
     {
@@ -181,6 +194,18 @@ public class Project: IDisposable
         return result;
     }
 
+    public void Dispose()
+    {
+        if (IsTemporary && Directory.Exists(TargetDirectory))
+        {
+            try
+            {
+                Directory.Delete(TargetDirectory, true);
+            }
+            catch { }
+        }
+    }
+
     private void CreateProjectFile()
     {
         XmlWriterSettings xws = new()
@@ -203,18 +228,6 @@ public class Project: IDisposable
         _project.WriteTo(xw);
         xw.Flush();
         return sb.ToString();
-    }
-
-    public void Dispose()
-    {
-        if (IsTemporary && Directory.Exists(TargetDirectory))
-        {
-            try
-            {
-                Directory.Delete(TargetDirectory, true);
-            }
-            catch { }
-        }
     }
 
     private string GetTemporaryDirectory()

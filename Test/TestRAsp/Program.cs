@@ -15,7 +15,7 @@ internal class Program
     //    Console.WriteLine(project.LastOutput);
     //    Console.ReadKey();
     //}
-    static void Main(string[] args)
+    static void Main2(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
         var app = builder.Build();
@@ -63,7 +63,7 @@ Hello World!
         mi.Invoke(null, new object[] { app });
         app.Run();
     }
-    static void Main1(string[] args)
+    static void Main(string[] args)
     {
         using Project server = new("Server")
         {
@@ -91,11 +91,24 @@ void Test()
             IsExecutable = false,
         };
         File.WriteAllText(Path.Combine(config.TargetDirectory, "Configure.cs"), @"
+using System.Reflection;
+
 public static class Configure
 {
     public static void Application(WebApplication app)
     {
-        app.Run(async context =>  await context.Response.WriteAsync(File.ReadAllText(""Hello.txt"")));
+        app.Run(
+            async context =>  await context.Response.WriteAsync(
+                File.ReadAllText(
+                    Path.Combine(
+                        Path.GetDirectoryName(
+                            Assembly.GetAssembly(typeof(Configure)).Location
+                        ), 
+                        ""Hello.txt""
+                    )
+                )
+            )
+        );
     }
 
 }
@@ -121,7 +134,6 @@ Hello World!
             run.StartInfo = new()
             {
                 FileName = server.ExeFile,
-                WorkingDirectory = Path.GetDirectoryName(server.ExeFile),
             };
             run.Start();
             run.WaitForExit();
