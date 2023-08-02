@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Net.Leksi.RACWebApp.Common</AssemblyName>
+    <RootNamespace>Net.Leksi.RACWebApp.Common</RootNamespace>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+  </PropertyGroup>
+  <Target Name="CopyPackage" AfterTargets="Pack">
+    <Move SourceFiles="$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg" DestinationFolder="W:\C#\nuget.local" />
+  </Target>
+
+</Project>

@@ -6,73 +6,64 @@ namespace TestRAC;
 
 internal class Program
 {
-    //static void Main(string[] args)
-    //{
-    //    using Project project = new("Test");
-    //    project.AddPackage("NUnit", "3.13.3");
-    //    Assembly ass = project.Compile();
-    //    Console.WriteLine(ass);
-    //    Console.WriteLine(project.LastOutput);
-    //    Console.ReadKey();
-    //}
-    static void Main2(string[] args)
-    {
-        var builder = WebApplication.CreateBuilder(args);
-        var app = builder.Build();
-        using Project config = new("Config")
-        {
-            Sdk = "Microsoft.NET.Sdk.Web",
-            IsExecutable = false,
-        };
-        File.WriteAllText(Path.Combine(config.TargetDirectory, "Configure.cs"), @"
-using System.Reflection;
+//    static void Main2(string[] args)
+//    {
+//        var builder = WebApplication.CreateBuilder(args);
+//        var app = builder.Build();
+//        using Project config = new("Config")
+//        {
+//            Sdk = "Microsoft.NET.Sdk.Web",
+//            IsExecutable = false,
+//        };
+//        File.WriteAllText(Path.Combine(config.TargetDirectory, "Configure.cs"), @"
+//using System.Reflection;
 
-public static class Configure
-{
-    public static void Application(WebApplication app)
-    {
-        app.Run(
-            async context =>  await context.Response.WriteAsync(
-                File.ReadAllText(
-                    Path.Combine(
-                        Path.GetDirectoryName(
-                            Assembly.GetAssembly(typeof(Configure)).Location
-                        ), 
-                        ""Hello.txt""
-                    )
-                )
-            )
-        );
-    }
+//public static class Configure
+//{
+//    public static void Application(WebApplication app)
+//    {
+//        app.Run(
+//            async context =>  await context.Response.WriteAsync(
+//                File.ReadAllText(
+//                    Path.Combine(
+//                        Path.GetDirectoryName(
+//                            Assembly.GetAssembly(typeof(Configure)).Location
+//                        ), 
+//                        ""Hello.txt""
+//                    )
+//                )
+//            )
+//        );
+//    }
 
-}
-");
-        File.WriteAllText(Path.Combine(config.TargetDirectory, "Hello.txt"), @"
-Hello World!
-");
-        config.AddContent("Hello.txt");
-        if (!config.Compile())
-        {
-            Console.WriteLine(config.LastOutput);
-            return;
-        }
-        Assembly assConfig = Assembly.LoadFile(config.LibraryFile!);
-        Type type = assConfig.GetType("Configure")!;
-        MethodInfo mi = type.GetMethod("Application");
+//}
+//");
+//        File.WriteAllText(Path.Combine(config.TargetDirectory, "Hello.txt"), @"
+//Hello World!
+//");
+//        config.AddContent("Hello.txt");
+//        if (!config.Compile())
+//        {
+//            Console.WriteLine(config.LastOutput);
+//            return;
+//        }
+//        Assembly assConfig = Assembly.LoadFile(config.LibraryFile!);
+//        Type type = assConfig.GetType("Configure")!;
+//        MethodInfo mi = type.GetMethod("Application");
 
-        mi.Invoke(null, new object[] { app });
-        app.Run();
-    }
+//        mi.Invoke(null, new object[] { app });
+//        app.Run();
+//    }
+
     static void Main(string[] args)
     {
         using Project server = new("Server")
         {
             Sdk = "Microsoft.NET.Sdk.Web",
-            IsExecutable = true,
         };
         server.AddPackage("NUnit", "3.13.3");
         Console.WriteLine(server.ProjectFileToString());
-        File.WriteAllText(Path.Combine(server.TargetDirectory, "Program.cs"), @"
+        File.WriteAllText(Path.Combine(server.ProjectDirectory, "Program.cs"), @"
 using NUnit.Framework;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -90,7 +81,7 @@ void Test()
             Sdk = "Microsoft.NET.Sdk.Web",
             IsExecutable = false,
         };
-        File.WriteAllText(Path.Combine(config.TargetDirectory, "Configure.cs"), @"
+        File.WriteAllText(Path.Combine(config.ProjectDirectory, "Configure.cs"), @"
 using System.Reflection;
 
 public static class Configure
@@ -113,7 +104,7 @@ public static class Configure
 
 }
 ");
-        File.WriteAllText(Path.Combine(config.TargetDirectory, "Hello.txt"), @"
+        File.WriteAllText(Path.Combine(config.ProjectDirectory, "Hello.txt"), @"
 Hello World!
 ");
         config.AddContent("Hello.txt");

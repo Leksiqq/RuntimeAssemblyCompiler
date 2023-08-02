@@ -1,15 +1,15 @@
 ﻿
 using System.Diagnostics;
+using System.Runtime.Loader;
 using System.Text;
 using System.Xml;
 using System.Xml.XPath;
 
 namespace Net.Leksi.RuntimeAssemblyCompiler;
 
-public class Project: IDisposable
+public class Project : IDisposable
 {
     private const string s_defaultSdk = "Microsoft.NET.Sdk";
-    private const string s_defaultTargetFramework = "net6.0-windows";
     private const string s_libraryOutputType = "Library";
     private const string s_exeOutputType = "Exe";
     private const int s_packageItemGroup = 2;
@@ -18,15 +18,16 @@ public class Project: IDisposable
     private const string s_projectFileName = "Project.csproj";
     private const string s_outputDirName = "bin";
 
-    private XmlDocument _project = new XmlDocument();
-    private XPathNavigator _xpathNavigator;
     private readonly List<Project> _includes = new();
 
+    private XmlDocument _project = new XmlDocument();
+    private XPathNavigator _xpathNavigator;
+
     public string Name { get; private set; }
-    public string TargetDirectory { get; private set; }
+    public string ProjectDirectory { get; private set; }
     public bool IsTemporary { get; private set; }
     public string LastOutput { get; private set; } = string.Empty;
-    public string LastError{ get; private set; } = string.Empty;
+    public string LastError { get; private set; } = string.Empty;
 
     public XmlDocument ProjectXml
     {
@@ -46,6 +47,7 @@ public class Project: IDisposable
         get => _xpathNavigator.SelectSingleNode("/Project/@Sdk")!.Value;
         set => ((XmlElement)_xpathNavigator.SelectSingleNode("/Project")!.UnderlyingObject!).SetAttribute("Sdk", value);
     }
+
     public string TargetFramework
     {
         get => _xpathNavigator.SelectSingleNode("/Project/PropertyGroup/TargetFramework")!.Value;
@@ -58,20 +60,20 @@ public class Project: IDisposable
         set => ((XmlElement)_xpathNavigator.SelectSingleNode("/Project/PropertyGroup/OutputType")!.UnderlyingObject!).InnerText = value ? s_exeOutputType : s_libraryOutputType;
     }
 
-    public string Configuration { get; init; } = "Release";
+    public string Configuration { get; set; } = "Release";
     public Encoding LogEncoding { get; init; } = Encoding.UTF8;
     public string? LibraryFile { get; private set; } = null;
     public string? ExeFile { get; private set; } = null;
-    public string ProjectFileName => Path.Combine(TargetDirectory, s_projectFileName);
+    public string ProjectFileName => Path.Combine(ProjectDirectory, s_projectFileName);
 
     public Project(string name, string? targetDirectory = null)
     {
         IsTemporary = targetDirectory is null;
         Name = name;
-        TargetDirectory = targetDirectory ?? GetTemporaryDirectory();
+        ProjectDirectory = targetDirectory ?? GetTemporaryDirectory();
         _project.LoadXml($@"<Project Sdk=""{s_defaultSdk}"">
     <PropertyGroup>
-        <TargetFramework>{s_defaultTargetFramework}</TargetFramework>
+        <TargetFramework>net{Environment.Version.Major}.{Environment.Version.Minor}</TargetFramework>
         <OutputType>{s_libraryOutputType}</OutputType>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
@@ -84,7 +86,7 @@ public class Project: IDisposable
 </Project>");
         _xpathNavigator = _project.CreateNavigator()!;
 
-        Console.WriteLine(TargetDirectory);
+        Console.WriteLine(ProjectDirectory);
     }
 
     ~Project()
@@ -92,18 +94,20 @@ public class Project: IDisposable
         Dispose();
     }
 
-    public void AddPackage(string name, string version)
+    public void AddPackage(string name, string version, string? source = null)
     {
         if (
             _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_packageItemGroup}]/PackageReference[@Include=\"{name}\"]") is XPathNavigator node
-            && node.SelectSingleNode("@Version") is XPathNavigator attr
+            && node.SelectSingleNode("@Version") is XPathNavigator versionAttr
+            && node.SelectSingleNode("@Source") is XPathNavigator sourceAttr
         )
         {
-            attr.SetValue(version);
+            versionAttr.SetValue(version);
+            sourceAttr.SetValue(source ?? string.Empty);
         }
         else
         {
-            _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_packageItemGroup}]")!.AppendChild($"<PackageReference Include=\"{name}\" Version=\"{version}\" />");
+            _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_packageItemGroup}]")!.AppendChild($"<PackageReference Include=\"{name}\" Version=\"{version}\"  Source=\"{source ?? string.Empty}\" />");
         }
     }
 
@@ -146,42 +150,69 @@ public class Project: IDisposable
 
     public bool Compile()
     {
+        bool result = Compile(0);
+        if (result)
+        {
+            foreach (string path in Directory.GetFiles(Path.Combine(ProjectDirectory, s_outputDirName)))
+            {
+                if ((".dll".Equals(Path.GetExtension(path)) || ".exe".Equals(Path.GetExtension(path))) && !path.Equals(LibraryFile))
+                {
+                    try
+                    {
+                        AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
+                    }
+                    catch { }
+                }
+            }
+        }
+        return result;
+    }
+
+    public void Dispose()
+    {
+        if (IsTemporary && Directory.Exists(ProjectDirectory))
+        {
+            try
+            {
+                Directory.Delete(ProjectDirectory, true);
+            }
+            catch { }
+        }
+    }
+
+    private bool Compile(int level)
+    {
         LibraryFile = null;
         ExeFile = null;
 
-        string outputDir = Path.Combine(TargetDirectory, s_outputDirName);
+        string outputDir = Path.Combine(ProjectDirectory, s_outputDirName);
 
         CreateProjectFile();
 
-        _includes.ForEach(p => p.Compile());
-
-        Process dotnet = new();
-
-        dotnet.StartInfo = new()
+        XPathNodeIterator ni = _xpathNavigator.Select($"/Project/ItemGroup[{s_packageItemGroup}]/PackageReference");
+        while (ni.MoveNext())
         {
-            FileName = "dotnet.exe",
-            Arguments = $"build \"{ProjectFileName}\" -c {Configuration} -o {outputDir} --ucr",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = LogEncoding,
-            StandardErrorEncoding = LogEncoding,
-        };
-        LastOutput = string.Empty;
-        LastError = string.Empty;
+            string package = ni.Current!.GetAttribute("Include", string.Empty);
+            string version = ni.Current!.GetAttribute("Version", string.Empty);
+            string source = ni.Current!.GetAttribute("Source", string.Empty);
+            if (!RunDotnet($"add \"{ProjectFileName}\" package {package} -v {version}{(!string.IsNullOrEmpty(source) ? $" --source \"{source}\"" : string.Empty)}"))
+            {
+                return false;
+            }
+        }
 
-        StringBuilder sbError = new();
+        foreach (Project include in _includes)
+        {
+            include.Configuration = Configuration;
+            if (!include.Compile(level + 1))
+            {
+                LastOutput = include.LastOutput;
+                LastError = include.LastError;
+                return false;
+            }
+        }
 
-        dotnet.ErrorDataReceived += (s, e) => sbError.Append(e.Data);
-
-        dotnet.Start();
-
-        dotnet.BeginErrorReadLine();
-        LastOutput = dotnet.StandardOutput.ReadToEnd();
-
-        dotnet.WaitForExit();
-        LastError = sbError.ToString();
-
-        bool result = dotnet.ExitCode == 0;
+        bool result = RunDotnet($"build \"{ProjectFileName}\" -c {Configuration} -o {outputDir} --ucr");
 
         if (result)
         {
@@ -194,16 +225,38 @@ public class Project: IDisposable
         return result;
     }
 
-    public void Dispose()
+    private bool RunDotnet(string arguments)
     {
-        if (IsTemporary && Directory.Exists(TargetDirectory))
+        Process dotnet = new();
+
+        dotnet.StartInfo = new()
         {
-            try
-            {
-                Directory.Delete(TargetDirectory, true);
-            }
-            catch { }
+            FileName = @"C:\Program Files\dotnet\dotnet.exe",
+            Arguments = arguments,
+            //RedirectStandardOutput = true,
+            //RedirectStandardError = true,
+            //StandardOutputEncoding = LogEncoding,
+            //StandardErrorEncoding = LogEncoding,
+        };
+        //LastOutput = string.Empty;
+        //LastError = string.Empty;
+
+        //StringBuilder sbError = new();
+
+        //dotnet.ErrorDataReceived += (s, e) => sbError.Append(e.Data);
+
+        dotnet.Start();
+
+        //dotnet.BeginErrorReadLine();
+        //LastOutput = dotnet.StandardOutput.ReadToEnd();
+
+        if (!dotnet.HasExited)
+        {
+            dotnet.WaitForExit();
         }
+        //LastError = sbError.ToString();
+
+        return dotnet.ExitCode == 0;
     }
 
     private void CreateProjectFile()
