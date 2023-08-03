@@ -11,7 +11,13 @@
 
   <ItemGroup>
     <PackageReference Include="Net.Leksi.RACWebApp.Common" Version="1.0.0" />
-    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="1.0.5" />
+    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="1.0.32" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Net.Leksi.RACWebApp.Common.1.0.0.nupkg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

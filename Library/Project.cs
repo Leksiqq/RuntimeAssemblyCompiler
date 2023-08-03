@@ -9,6 +9,8 @@ namespace Net.Leksi.RuntimeAssemblyCompiler;
 
 public class Project : IDisposable
 {
+    public event DotnetEventHandler? DotnetEvent;
+
     private const string s_defaultSdk = "Microsoft.NET.Sdk";
     private const string s_libraryOutputType = "Library";
     private const string s_exeOutputType = "Exe";
@@ -17,17 +19,19 @@ public class Project : IDisposable
     private const int s_contentItemGroup = 1;
     private const string s_projectFileName = "Project.csproj";
     private const string s_outputDirName = "bin";
+    private const string s_true = "True";
+    private const string s_false = "False";
 
+    private readonly string _appDataDirectory;
     private readonly List<Project> _includes = new();
 
     private XmlDocument _project = new XmlDocument();
     private XPathNavigator _xpathNavigator;
 
     public string Name { get; private set; }
-    public string ProjectDirectory { get; private set; }
+    public string SourceDirectory { get; private set; }
+    public string OutputDirectory { get; private set; }
     public bool IsTemporary { get; private set; }
-    public string LastOutput { get; private set; } = string.Empty;
-    public string LastError { get; private set; } = string.Empty;
 
     public XmlDocument ProjectXml
     {
@@ -37,8 +41,6 @@ public class Project : IDisposable
             _project = value;
             _xpathNavigator = _project.CreateNavigator()!;
             _includes.Clear();
-            LastOutput = string.Empty;
-            LastError = string.Empty;
         }
     }
 
@@ -64,13 +66,30 @@ public class Project : IDisposable
     public Encoding LogEncoding { get; init; } = Encoding.UTF8;
     public string? LibraryFile { get; private set; } = null;
     public string? ExeFile { get; private set; } = null;
-    public string ProjectFileName => Path.Combine(ProjectDirectory, s_projectFileName);
+    public string ProjectFileName => Path.Combine(SourceDirectory, s_projectFileName);
+    public bool IsVerbose { get; set; } = false;
+    public bool GeneratePackage
+    {
+        get => s_true.Equals(_xpathNavigator.SelectSingleNode("/Project/PropertyGroup/GeneratePackageOnBuild")!.Value)
+            && s_true.Equals(_xpathNavigator.SelectSingleNode("/Project/PropertyGroup/IsPackable")!.Value);
+        set
+        {
+            ((XmlElement)_xpathNavigator.SelectSingleNode("/Project/PropertyGroup/GeneratePackageOnBuild")!.UnderlyingObject!).InnerText = value ? s_true : s_false;
+            ((XmlElement)_xpathNavigator.SelectSingleNode("/Project/PropertyGroup/IsPackable")!.UnderlyingObject!).InnerText = value ? s_true : s_false;
+        }
+    }
 
     public Project(string name, string? targetDirectory = null)
     {
+        _appDataDirectory = GetType().Namespace!;
         IsTemporary = targetDirectory is null;
         Name = name;
-        ProjectDirectory = targetDirectory ?? GetTemporaryDirectory();
+        SourceDirectory = targetDirectory ?? GetTemporaryDirectory();
+        OutputDirectory = Path.Combine(SourceDirectory, s_outputDirName);
+        if (IsTemporary)
+        {
+            CleanPrevious();
+        }
         _project.LoadXml($@"<Project Sdk=""{s_defaultSdk}"">
     <PropertyGroup>
         <TargetFramework>net{Environment.Version.Major}.{Environment.Version.Minor}</TargetFramework>
@@ -78,6 +97,8 @@ public class Project : IDisposable
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <AssemblyName>{Name}</AssemblyName>
+        <IsPackable>False</IsPackable>
+        <GeneratePackageOnBuild>False</GeneratePackageOnBuild>
     </PropertyGroup>
     <ItemGroup/>
     <ItemGroup/>
@@ -86,7 +107,26 @@ public class Project : IDisposable
 </Project>");
         _xpathNavigator = _project.CreateNavigator()!;
 
-        Console.WriteLine(ProjectDirectory);
+    }
+
+    private void CleanPrevious()
+    {
+        Thread cleaner = new(() =>
+        {
+            foreach(string path in Directory.GetDirectories(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), _appDataDirectory)))
+            {
+                if(File.Exists(Path.Combine(path, _appDataDirectory)))
+                {
+                    try
+                    {
+                        Directory.Delete(path, true);
+                    }
+                    catch { }
+                }
+            }
+        });
+        cleaner.IsBackground = true;
+        cleaner.Start();
     }
 
     ~Project()
@@ -94,43 +134,50 @@ public class Project : IDisposable
         Dispose();
     }
 
+    List<Tuple<string, string, string?>> _packages = new();
+
     public void AddPackage(string name, string version, string? source = null)
     {
-        if (
-            _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_packageItemGroup}]/PackageReference[@Include=\"{name}\"]") is XPathNavigator node
-            && node.SelectSingleNode("@Version") is XPathNavigator versionAttr
-            && node.SelectSingleNode("@Source") is XPathNavigator sourceAttr
-        )
-        {
-            versionAttr.SetValue(version);
-            sourceAttr.SetValue(source ?? string.Empty);
-        }
-        else
-        {
-            _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_packageItemGroup}]")!.AppendChild($"<PackageReference Include=\"{name}\" Version=\"{version}\"  Source=\"{source ?? string.Empty}\" />");
-        }
+        _packages.Add(new Tuple<string, string, string>(name, version, source));
+        //if (
+        //    _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_packageItemGroup}]/PackageReference[@Include=\"{name}\"]") is XPathNavigator node
+        //    && node.SelectSingleNode("@Version") is XPathNavigator versionAttr
+        //    && node.SelectSingleNode("@Source") is XPathNavigator sourceAttr
+        //)
+        //{
+        //    versionAttr.SetValue(version);
+        //    sourceAttr.SetValue(source ?? string.Empty);
+        //}
+        //else
+        //{
+        //    _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_packageItemGroup}]")!.AppendChild($"<PackageReference Include=\"{name}\" Version=\"{version}\"  Source=\"{source ?? string.Empty}\" />");
+        //}
     }
+
+    List<string> _projects = new();
 
     public void AddProject(string path)
     {
-        if (
-            _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_projectItemGroup}]/ProjectReference[@Include=\"{path}\"]") is null
-        )
-        {
-            _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_projectItemGroup}]")!.AppendChild($"<ProjectReference Include=\"{path}\" />");
-        }
+        _projects.Add(path);
+        //if (
+        //    _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_projectItemGroup}]/ProjectReference[@Include=\"{path}\"]") is null
+        //)
+        //{
+        //    _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_projectItemGroup}]")!.AppendChild($"<ProjectReference Include=\"{path}\" />");
+        //}
     }
 
     public void AddProject(Project project)
     {
         string path = project.ProjectFileName;
-        if (
-            _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_projectItemGroup}]/ProjectReference[@Include=\"{path}\"]") is null
-        )
-        {
-            _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_projectItemGroup}]")!.AppendChild($"<ProjectReference Include=\"{path}\" />");
-            _includes.Add(project);
-        }
+        _projects.Add(path);
+        //if (
+        //    _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_projectItemGroup}]/ProjectReference[@Include=\"{path}\"]") is null
+        //)
+        //{
+        //    _xpathNavigator.SelectSingleNode($"/Project/ItemGroup[{s_projectItemGroup}]")!.AppendChild($"<ProjectReference Include=\"{path}\" />");
+        //    _includes.Add(project);
+        //}
     }
 
     public void AddContent(string path)
@@ -150,10 +197,75 @@ public class Project : IDisposable
 
     public bool Compile()
     {
-        bool result = Compile(0);
+        LibraryFile = null;
+        ExeFile = null;
+
+        CreateProjectFile();
+
+        //StringBuilder sbSources = new();
+
+        //XPathNodeIterator ni = _xpathNavigator.Select($"/Project/ItemGroup[{s_packageItemGroup}]/PackageReference");
+        //while (ni.MoveNext())
+        //{
+        //    string source = ni.Current!.GetAttribute("Source", string.Empty);
+        //    if(sbSources.Length > 0)
+        //    {
+        //        sbSources.Append(';');
+        //    }
+        //    sbSources.Append(source);
+        //}
+
+        //ni = _xpathNavigator.Select($"/Project/ItemGroup[{s_packageItemGroup}]/PackageReference");
+        //while (ni.MoveNext())
+        //{
+        //    string package = ni.Current!.GetAttribute("Include", string.Empty);
+        //    string version = ni.Current!.GetAttribute("Version", string.Empty);
+        //    if (!RunDotnet($"add \"{ProjectFileName}\" package {package} --version {version}{(sbSources.Length > 0 ? $" --source \"{sbSources}\"" : string.Empty)}"))
+        //    {
+        //        return false;
+        //    }
+        //}
+
+        foreach(var item in _projects)
+        {
+            if (!RunDotnet($"add \"{ProjectFileName}\" reference \"{item}\""))
+            {
+                return false;
+            }
+        }
+
+        foreach (var item in _packages)
+        {
+            if (!RunDotnet($"add \"{ProjectFileName}\" package {item.Item1} --version {item.Item2}{(!string.IsNullOrEmpty(item.Item3) ? $" --source \"{item.Item3}\"" : string.Empty)}"))
+            {
+                return false;
+            }
+        }
+
+        //foreach (Project include in _includes)
+        //{
+        //    include.DotnetEvent += Include_DotnetEvent;
+        //    include.Configuration = Configuration;
+        //    include.TargetFramework = TargetFramework;
+        //    include.IsVerbose = IsVerbose;
+        //    if (!include.Compile())
+        //    {
+        //        include.DotnetEvent -= Include_DotnetEvent;
+        //        return false;
+        //    }
+        //    include.DotnetEvent -= Include_DotnetEvent;
+        //}
+
+        bool result = RunDotnet($"build \"{ProjectFileName}\" --configuration {Configuration} --output {OutputDirectory} --use-current-runtime");
+
         if (result)
         {
-            foreach (string path in Directory.GetFiles(Path.Combine(ProjectDirectory, s_outputDirName)))
+            LibraryFile = Path.Combine(OutputDirectory, $"{Name}.dll");
+            if (IsExecutable)
+            {
+                ExeFile = Path.Combine(OutputDirectory, $"{Name}.exe");
+            }
+            foreach (string path in Directory.GetFiles(OutputDirectory))
             {
                 if ((".dll".Equals(Path.GetExtension(path)) || ".exe".Equals(Path.GetExtension(path))) && !path.Equals(LibraryFile))
                 {
@@ -161,102 +273,76 @@ public class Project : IDisposable
                     {
                         AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        if (IsVerbose)
+                        {
+                            Console.WriteLine(ex);
+                        }
+                    }
                 }
             }
         }
         return result;
     }
 
-    public void Dispose()
+    private void Include_DotnetEvent(object? sender, DotnetEventArgs args)
     {
-        if (IsTemporary && Directory.Exists(ProjectDirectory))
-        {
-            try
-            {
-                Directory.Delete(ProjectDirectory, true);
-            }
-            catch { }
-        }
+        DotnetEvent?.Invoke(sender, args);
     }
 
-    private bool Compile(int level)
+    public void Dispose()
     {
-        LibraryFile = null;
-        ExeFile = null;
-
-        string outputDir = Path.Combine(ProjectDirectory, s_outputDirName);
-
-        CreateProjectFile();
-
-        XPathNodeIterator ni = _xpathNavigator.Select($"/Project/ItemGroup[{s_packageItemGroup}]/PackageReference");
-        while (ni.MoveNext())
+        if (IsTemporary && Directory.Exists(SourceDirectory))
         {
-            string package = ni.Current!.GetAttribute("Include", string.Empty);
-            string version = ni.Current!.GetAttribute("Version", string.Empty);
-            string source = ni.Current!.GetAttribute("Source", string.Empty);
-            if (!RunDotnet($"add \"{ProjectFileName}\" package {package} -v {version}{(!string.IsNullOrEmpty(source) ? $" --source \"{source}\"" : string.Empty)}"))
-            {
-                return false;
-            }
+            File.WriteAllText(Path.Combine(SourceDirectory, _appDataDirectory), string.Empty);
         }
-
-        foreach (Project include in _includes)
-        {
-            include.Configuration = Configuration;
-            if (!include.Compile(level + 1))
-            {
-                LastOutput = include.LastOutput;
-                LastError = include.LastError;
-                return false;
-            }
-        }
-
-        bool result = RunDotnet($"build \"{ProjectFileName}\" -c {Configuration} -o {outputDir} --ucr");
-
-        if (result)
-        {
-            LibraryFile = Path.Combine(outputDir, $"{Name}.dll");
-            if (IsExecutable)
-            {
-                ExeFile = Path.Combine(outputDir, $"{Name}.exe");
-            }
-        }
-        return result;
     }
 
     private bool RunDotnet(string arguments)
     {
+        StringBuilder? sbError = null;
+        string? output = null;
+
         Process dotnet = new();
 
         dotnet.StartInfo = new()
         {
             FileName = @"C:\Program Files\dotnet\dotnet.exe",
             Arguments = arguments,
-            //RedirectStandardOutput = true,
-            //RedirectStandardError = true,
-            //StandardOutputEncoding = LogEncoding,
-            //StandardErrorEncoding = LogEncoding,
         };
-        //LastOutput = string.Empty;
-        //LastError = string.Empty;
+        if (!IsVerbose)
+        {
+            dotnet.StartInfo.RedirectStandardOutput = true;
+            dotnet.StartInfo.RedirectStandardError = true;
+            dotnet.StartInfo.StandardOutputEncoding = LogEncoding;
+            dotnet.StartInfo.StandardErrorEncoding = LogEncoding;
+            sbError = new();
 
-        //StringBuilder sbError = new();
+            dotnet.ErrorDataReceived += (s, e) => sbError.Append(e.Data);
 
-        //dotnet.ErrorDataReceived += (s, e) => sbError.Append(e.Data);
-
+        }
         dotnet.Start();
 
-        //dotnet.BeginErrorReadLine();
-        //LastOutput = dotnet.StandardOutput.ReadToEnd();
+        if (!IsVerbose)
+        {
+            dotnet.BeginErrorReadLine();
+            output = dotnet.StandardOutput.ReadToEnd();
+        }
+
 
         if (!dotnet.HasExited)
         {
             dotnet.WaitForExit();
         }
-        //LastError = sbError.ToString();
 
-        return dotnet.ExitCode == 0;
+        bool success = dotnet.ExitCode == 0;
+        if (!IsVerbose)
+        {
+            DotnetEvent?.Invoke(this, new DotnetEventArgs(success, output!, sbError!.ToString(), arguments));
+        }
+
+        return success;
     }
 
     private void CreateProjectFile()
@@ -268,6 +354,10 @@ public class Project : IDisposable
         XmlWriter xw = XmlWriter.Create(ProjectFileName, xws);
         _project.WriteTo(xw);
         xw.Close();
+        if (IsTemporary && IsVerbose)
+        {
+            Console.WriteLine($"Temporary project {Name} was created at {SourceDirectory}.");
+        }
     }
 
     public string ProjectFileToString()
@@ -285,7 +375,9 @@ public class Project : IDisposable
 
     private string GetTemporaryDirectory()
     {
-        string tempDirectory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        string appDataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), _appDataDirectory);
+        string tempDirectory;
+        for(tempDirectory = Path.Combine(appDataDirectory, Path.GetRandomFileName()); Directory.Exists(tempDirectory); tempDirectory = Path.Combine(appDataDirectory, Path.GetRandomFileName())) { }
         Directory.CreateDirectory(tempDirectory);
         return tempDirectory;
     }
