@@ -90,11 +90,12 @@ public class Tests
 
     private void CreateClassSource(Node node)
     {
-        node._project = new Project(node.Name) 
-        { 
-            GeneratePackage = node.IsPackageable, 
-        };
-        node._project.TargetFramework += "-windows7.0";
+        node._project = new Project(new ProjectOptions
+        {
+            Name = node.Name,
+            GeneratePackage = node.IsPackageable,
+            TargetFramework = "net6.0-windows7.0",
+        });
         File.WriteAllText(Path.Combine(node._project.SourceDirectory, "magic.txt"), node.MagicWord);
         node._project.AddContent("magic.txt");
         FileStream fileStream = File.Create(Path.Combine(node._project.SourceDirectory, $"{node.Name}.cs"));

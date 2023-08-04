@@ -8,7 +8,7 @@ internal class Program
 {
     static void Main(string[] args)
     {
-        using Project server = new("Server")
+        using Project1 server = new("Server")
         {
             Sdk = "Microsoft.NET.Sdk.Web",
             IsVerbose = true,
@@ -30,7 +30,7 @@ public class Server: IServer
 }
 "
         );
-        using Project config = new("Config")
+        using Project1 config = new("Config")
         {
             Sdk = "Microsoft.NET.Sdk.Web",
         };
