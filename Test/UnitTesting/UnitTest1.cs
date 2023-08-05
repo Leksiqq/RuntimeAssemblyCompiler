@@ -19,6 +19,7 @@ public class Tests
     [TestCase(-1)]
     public void Test1(int seed)
     {
+        Project.CleanTemporary();
         if (seed == -1)
         {
             seed = (int)(long.Parse(
@@ -27,7 +28,7 @@ public class Tests
                 )
             ) % int.MaxValue);
         }
-        Assert.Warn($"seed: {seed}");
+        Console.WriteLine($"seed: {seed}");
         Random rnd = new Random(seed);
         Dictionary<int, List<Node>> nodesByLevel = new();
         List<Node> nodes = new();
@@ -41,7 +42,6 @@ public class Tests
             }
             list.Add(node);
             nodes.Add(node);
-            Assert.Warn($"new node: {level}: {node.Name}, {node.IsPackageable}, [{string.Join(',', node.Children.Where(n => n.IsPackageable).Select(n => n.Name))}]");
         };
         Node root = CreateDependencyTree(null, rnd, 0, onNewNode);
 
@@ -68,16 +68,16 @@ public class Tests
         { 
             foreach(Node node in nodesByLevel[level].Where(n => n.IsPackageable))
             {
-                Assert.Warn($"compiling: {node._project.Name}, {node._project.SourceDirectory}");
                 node._project.DotnetEvent += _project_DotnetEvent;
                 node._project.Compile();
                 node._project.DotnetEvent -= _project_DotnetEvent;
             }
         }
-        Assert.Warn($"compiling: {root._project.Name}");
         root._project.DotnetEvent += _project_DotnetEvent;
         root._project.Compile();
         root._project.DotnetEvent -= _project_DotnetEvent;
+
+        nodes.ForEach(n => n._project.Dispose());
     }
 
     private void _project_DotnetEvent(object? sender, DotnetEventArgs args)
@@ -90,11 +90,11 @@ public class Tests
 
     private void CreateClassSource(Node node)
     {
-        node._project = new Project(new ProjectOptions
+        node._project = Project.Create(new ProjectOptions
         {
             Name = node.Name,
             GeneratePackage = node.IsPackageable,
-            TargetFramework = "net6.0-windows7.0",
+            TargetFramework = "net6.0-windows",
         });
         File.WriteAllText(Path.Combine(node._project.SourceDirectory, "magic.txt"), node.MagicWord);
         node._project.AddContent("magic.txt");
@@ -131,7 +131,7 @@ public class Tests
     {
         Node result = new()
         {
-            IsPackageable = (level > 0 && rnd.Next() % 3 == 1),
+            IsPackageable = (level == 4 && rnd.Next() % 3 == 1),
             Parent = parent,
             MagicWord = MakeMagicWord(rnd),
         };

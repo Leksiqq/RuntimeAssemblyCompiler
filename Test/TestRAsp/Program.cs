@@ -57,13 +57,15 @@ internal class Program
 
     static void Main(string[] args)
     {
-        using Project1 server = new("Server")
+        using Project server = Project.Create(new ProjectOptions
         {
+            Name = "Server",
             Sdk = "Microsoft.NET.Sdk.Web",
-        };
+            TargetFramework = "net6.0-windows",
+            IsExecutable = true,
+        });
         server.AddPackage("NUnit", "3.13.3");
-        Console.WriteLine(server.ProjectFileToString());
-        File.WriteAllText(Path.Combine(server.ProjectDirectory, "Program.cs"), @"
+        File.WriteAllText(Path.Combine(server.SourceDirectory!, "Program.cs"), @"
 using NUnit.Framework;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -76,12 +78,12 @@ void Test()
 {
 }
 ");
-        using Project1 config = new("Config")
+        using Project config = Project.Create(new ProjectOptions
         {
+            Name = "Config",
             Sdk = "Microsoft.NET.Sdk.Web",
-            IsExecutable = false,
-        };
-        File.WriteAllText(Path.Combine(config.ProjectDirectory, "Configure.cs"), @"
+        });
+        File.WriteAllText(Path.Combine(config.SourceDirectory!, "Configure.cs"), @"
 using System.Reflection;
 
 public static class Configure
@@ -104,22 +106,21 @@ public static class Configure
 
 }
 ");
-        File.WriteAllText(Path.Combine(config.ProjectDirectory, "Hello.txt"), @"
+        File.WriteAllText(Path.Combine(config.SourceDirectory!, "Hello.txt"), @"
 Hello World!
 ");
         config.AddContent("Hello.txt");
         server.AddProject(config);
+        server.DotnetEvent += (o, a) =>
+        {
+            if (!a.Success)
+            {
+                Console.WriteLine($"{a.Arguments}\n{a.Output}\n{a.Error}");
+            }
+        };
         bool ok = server.Compile();
         Console.WriteLine(ok);
-        if (!ok)
-        {
-            Console.WriteLine(server.LastOutput);
-            if(!string.IsNullOrEmpty(server.LastError))
-            {
-                Console.WriteLine(server.LastError);
-            }
-        }
-        else
+        if (ok)
         {
             Process run = new();
             run.StartInfo = new()
