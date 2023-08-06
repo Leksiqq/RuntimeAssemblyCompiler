@@ -1,12 +1,19 @@
 using Net.Leksi.RuntimeAssemblyCompiler;
-using System.ComponentModel.Design;
 using System.Diagnostics;
+using System.Reflection.Emit;
 using System.Text;
 
 namespace Net.Leksi.Rac.UnitTesting;
 
 public class Tests
 {
+    const int s_numLevels = 4;
+    const int s_numTreeChildren = 3;
+    const int s_numGraphChildren = 3;
+    const int s_numOtherProperties = 3;
+    const int s_selfDependentBase = 12;
+    const int s_isPackableBase = 3;
+
     [OneTimeSetUp]
     public void OneTimeSetUp()
     {
@@ -19,7 +26,7 @@ public class Tests
     [TestCase(-1)]
     public void Test1(int seed)
     {
-        Project.CleanTemporary();
+        Project.ClearTemporary(true);
         if (seed == -1)
         {
             seed = (int)(long.Parse(
@@ -30,32 +37,42 @@ public class Tests
         }
         Console.WriteLine($"seed: {seed}");
         Random rnd = new Random(seed);
-        Dictionary<int, List<Node>> nodesByLevel = new();
         List<Node> nodes = new();
 
         Action<Node, int> onNewNode = (node, level) =>
         {
-            if(!nodesByLevel.TryGetValue(level, out List<Node>? list))
-            {
-                list = new List<Node>();
-                nodesByLevel.Add(level, list);
-            }
-            list.Add(node);
             nodes.Add(node);
         };
         Node root = CreateDependencyTree(null, rnd, 0, onNewNode);
+
+        Assert.That(nodes.Count, Is.EqualTo(((int)Math.Round(Math.Pow(s_numTreeChildren, s_numLevels + 1))) / (s_numTreeChildren - 1)));
+
+        ExtendDependencyTreeToGraph(nodes, rnd);
 
         foreach (Node node in nodes)
         {
             CreateClassSource(node);
         }
+
         foreach (Node node in nodes)
         {
-            foreach (Node child in node.Children)
+            Assert.That(File.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
+        }
+
+        foreach (Node node in nodes.Where(n => n.IsPackageable))
+        {
+            node._project.DotnetEvent += _project_DotnetEvent;
+            node._project.Compile();
+            node._project.DotnetEvent -= _project_DotnetEvent;
+        }
+
+        foreach (Node node in nodes)
+        {
+            foreach (Node child in node.Children.Where(n => n != node))
             {
                 if (child._project.GeneratePackage)
                 {
-                    node._project.AddPackage(child.Name, "1.0.0", child._project.OutputDirectory);
+                    node._project.AddPackage(child._project);
                 }
                 else
                 {
@@ -64,20 +81,41 @@ public class Tests
             }
         }
 
-        for (int level = 4; level > 0; --level) 
-        { 
-            foreach(Node node in nodesByLevel[level].Where(n => n.IsPackageable))
-            {
-                node._project.DotnetEvent += _project_DotnetEvent;
-                node._project.Compile();
-                node._project.DotnetEvent -= _project_DotnetEvent;
-            }
-        }
         root._project.DotnetEvent += _project_DotnetEvent;
         root._project.Compile();
         root._project.DotnetEvent -= _project_DotnetEvent;
 
         nodes.ForEach(n => n._project.Dispose());
+    }
+
+    private void ExtendDependencyTreeToGraph(List<Node> nodes, Random rnd)
+    {
+        foreach(Node node in nodes.Where(n => !n.IsPackageable))
+        {
+            if(rnd.Next(s_selfDependentBase) == 4)
+            {
+                node.Children.Add(node);
+            }
+            while(node.Children.Count < s_numTreeChildren + s_numGraphChildren)
+            {
+                Node[] avail = nodes.Where(
+                    n => n != node
+                        && !node.Children.Contains(n)
+                        && !node.Ancestors.Contains(n)
+                ).ToArray();
+                if (!avail.Any())
+                {
+                    break;
+                }
+                Node taken = avail[rnd.Next(avail.Length)];
+                node.Children.Add(taken);
+                taken.Ancestors.Add(node);
+                foreach (Node anc in node.Ancestors)
+                {
+                    taken.Ancestors.Add(anc);
+                }
+            }
+        }
     }
 
     private void _project_DotnetEvent(object? sender, DotnetEventArgs args)
@@ -104,16 +142,15 @@ public class Tests
         sw.WriteLine($"public class {node.Name}");
         sw.WriteLine("{");
         int i = 0;
-        if (node.Children.Any())
+        foreach (Node child in node.Children)
         {
-            for (; i < 3; ++i)
-            {
-                sw.WriteLine($"    public {node.Children[i].Name} Prop{i} {{ get; set; }}");
-            }
+            sw.WriteLine($"    public {child.Name} Prop{i} {{ get; set; }}");
+            ++i;
         }
-        for (; i < 10; ++i)
+        for (int j = 0; j < s_numOtherProperties; ++j)
         {
             sw.WriteLine($"    public string Prop{i} {{ get; set; }}");
+            ++i;
         }
         sw.WriteLine(@$"    public string Magic => File.ReadAllText(
             Path.Combine(
@@ -131,13 +168,20 @@ public class Tests
     {
         Node result = new()
         {
-            IsPackageable = (level == 4 && rnd.Next() % 3 == 1),
-            Parent = parent,
+            IsPackageable = (level == s_numLevels && rnd.Next(s_isPackableBase) == 1),
             MagicWord = MakeMagicWord(rnd),
         };
-        if(level < 4)
+        if(parent is { })
         {
-            for(int i = 0; i < 3; ++i)
+            result.Ancestors.Add(parent);
+            foreach(Node anc in parent.Ancestors)
+            {
+                result.Ancestors.Add(anc);
+            }
+        }
+        if (level < s_numLevels)
+        {
+            for(int i = 0; i < s_numTreeChildren; ++i)
             {
                 result.Children.Add(CreateDependencyTree(result, rnd, level + 1, onNewNode));
             }
@@ -162,8 +206,8 @@ public class Tests
         internal Project _project = null!;
         internal string Name { get; init; }
         internal bool IsPackageable { get; init; } = false;
-        internal Node? Parent { get; init; } = null;
         internal List<Node> Children { get; init; } = new();
+        internal HashSet<Node> Ancestors { get; init; } = new();
         internal string MagicWord { get; init; } = string.Empty;
         internal Node()
         {

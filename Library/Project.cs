@@ -1,11 +1,12 @@
 ﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Xml;
 using System.Xml.XPath;
 
 namespace Net.Leksi.RuntimeAssemblyCompiler;
 
-public class Project: IDisposable
+public class Project : IDisposable
 {
     public event DotnetEventHandler? DotnetEvent;
 
@@ -18,10 +19,13 @@ public class Project: IDisposable
     private const string s_false = "False";
     private const string s_outputDirName = "bin";
     private const string s_version = "1.0.0";
+    private const string s_disposedFile = ".disposed";
 
     private readonly List<PackageHolder> _packages = new();
     private readonly List<ProjectHolder> _projects = new();
     private readonly List<string> _contents = new();
+
+    private string _lockFile = string.Empty;
 
     public string Name { get; private set; } = null!;
     public string Sdk { get; private set; } = null!;
@@ -64,6 +68,7 @@ public class Project: IDisposable
         };
         project.ProjectFile = Path.Combine(project.SourceDirectory, $"{project.Name}.csproj");
         project.OutputDirectory = Path.Combine(project.SourceDirectory, s_outputDirName);
+        project._lockFile = Path.Combine(project.SourceDirectory, ".lock");
         return project;
     }
 
@@ -115,11 +120,11 @@ public class Project: IDisposable
 
     public bool Compile()
     {
-        Thread cleaner = new(CleanTemporary);
+        Thread cleaner = new(() => ClearTemporary());
         cleaner.IsBackground = true;
         cleaner.Start();
 
-        if(!CreateProjectFile())
+        if (!CreateProjectFile())
         {
             return false;
         }
@@ -138,14 +143,15 @@ public class Project: IDisposable
         return success;
     }
 
-    public static void CleanTemporary()
+    public static void ClearTemporary(bool unconditional = false)
     {
         foreach (string path in Directory.GetDirectories(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), s_appDataDirectory)))
         {
-            if (File.Exists(Path.Combine(path, s_appDataDirectory)))
+            if (unconditional || File.Exists(Path.Combine(path, s_disposedFile)))
             {
                 try
                 {
+                    Console.WriteLine($"Delete {path}");
                     Directory.Delete(path, true);
                 }
                 catch { }
@@ -157,7 +163,7 @@ public class Project: IDisposable
     {
         if (IsTemporary && Directory.Exists(SourceDirectory))
         {
-            File.WriteAllText(Path.Combine(SourceDirectory, s_appDataDirectory), string.Empty);
+            File.WriteAllText(Path.Combine(SourceDirectory, s_disposedFile), string.Empty);
         }
     }
 
@@ -181,12 +187,15 @@ public class Project: IDisposable
 
     private bool CreateProjectFile()
     {
-        XmlWriterSettings xws = new()
+        if (!File.Exists(_lockFile))
         {
-            Indent = true,
-        };
-        XmlDocument xml = new();
-        xml.LoadXml($@"<Project Sdk=""{Sdk}"">
+            File.WriteAllText(_lockFile, string.Empty);
+            XmlWriterSettings xws = new()
+            {
+                Indent = true,
+            };
+            XmlDocument xml = new();
+            xml.LoadXml($@"<Project Sdk=""{Sdk}"">
     <PropertyGroup>
         <TargetFramework>{TargetFramework}</TargetFramework>
         <OutputType>{OutputType}</OutputType>
@@ -197,80 +206,84 @@ public class Project: IDisposable
         <GeneratePackageOnBuild>{(GeneratePackage ? s_true : s_false)}</GeneratePackageOnBuild>
     </PropertyGroup>
 </Project>");
-        if (_contents.Any())
-        {
-            XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!;
-            nav.AppendChild("<ItemGroup/>");
-            nav.MoveToChild("ItemGroup", string.Empty);
-            foreach(string path in _contents)
+            if (_contents.Any())
             {
-                if (!File.Exists(Path.Combine(SourceDirectory!, path)))
+                XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!;
+                nav.AppendChild("<ItemGroup/>");
+                nav.MoveToChild("ItemGroup", string.Empty);
+                foreach (string path in _contents)
                 {
-                    string message = $"File to add to output '{path}' not found!";
-                    if (IsVerbose)
+                    if (!File.Exists(Path.Combine(SourceDirectory!, path)))
                     {
-                        Console.WriteLine(message);
+                        string message = $"File to add to output '{path}' not found!";
+                        if (IsVerbose)
+                        {
+                            Console.WriteLine(message);
+                        }
+                        else
+                        {
+                            DotnetEvent?.Invoke(this, new DotnetEventArgs(false, message, string.Empty, string.Empty));
+                        }
+                        return false;
                     }
-                    else
-                    {
-                        DotnetEvent?.Invoke(this, new DotnetEventArgs(false, message, string.Empty, string.Empty));
-                    }
-                    return false;
-                }
-                nav.AppendChild(@$"<Content Include=""{path}"">
+                    nav.AppendChild(@$"<Content Include=""{path}"">
     <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     <CopyToPublishDirectory>Always</CopyToPublishDirectory>
 </Content>");
+                }
             }
-        }
-        XmlWriter xw = XmlWriter.Create(ProjectFile, xws);
-        xml.WriteTo(xw);
-        xw.Close();
+            XmlWriter xw = XmlWriter.Create(ProjectFile, xws);
+            xml.WriteTo(xw);
+            xw.Close();
 
-        foreach (PackageHolder package in _packages)
-        {
-            if (!RunDotnet($"add \"{ProjectFile}\" package {package.Name} --version {package.Version}{(!string.IsNullOrEmpty(package.Source) ? $" --source \"{package.Source}\"" : string.Empty)}"))
+            foreach (PackageHolder package in _packages)
             {
-                return false;
-            }
-        }
-        foreach (ProjectHolder project in _projects)
-        {
-            if (project.Project is { })
-            {
-                project.Project.TargetFramework = TargetFramework;
-                project.Project.Configuration = Configuration;
-                project.Project.IsVerbose = IsVerbose;
-                project.Project.DotnetEvent += OnDotnetEvent;
-                if (
-                    !project.Project.CreateProjectFile() 
-                    || !RunDotnet($"add \"{ProjectFile}\" reference {project.Project.ProjectFile}")
-                )
-                {
-                    project.Project.DotnetEvent -= OnDotnetEvent;
-                    return false;
-                }
-                project.Project.DotnetEvent -= OnDotnetEvent;
-            }
-            else
-            {
-                if (!RunDotnet($"add \"{ProjectFile}\" reference {project.Path}"))
+                if (!RunDotnet($"add \"{ProjectFile}\" package {package.Name} --version {package.Version}{(!string.IsNullOrEmpty(package.Source) ? $" --source \"{package.Source}\"" : string.Empty)}"))
                 {
                     return false;
                 }
             }
-        }
-        if (IsTemporary)
-        {
-            string message = $"Temporary project {Name} was created at {SourceDirectory}.";
-            if (IsVerbose)
+            foreach (ProjectHolder project in _projects)
             {
-                Console.WriteLine(message);
+                if (project.Project is { })
+                {
+                    if (!File.Exists(project.Project._lockFile))
+                    {
+                        project.Project.TargetFramework = TargetFramework;
+                        project.Project.Configuration = Configuration;
+                        project.Project.IsVerbose = IsVerbose;
+                        project.Project.DotnetEvent += OnDotnetEvent;
+                        if (
+                            !project.Project.CreateProjectFile()
+                            || !RunDotnet($"add \"{ProjectFile}\" reference {project.Project.ProjectFile}")
+                        )
+                        {
+                            project.Project.DotnetEvent -= OnDotnetEvent;
+                            return false;
+                        }
+                        project.Project.DotnetEvent -= OnDotnetEvent;
+                    }
+                }
+                else
+                {
+                    if (!RunDotnet($"add \"{ProjectFile}\" reference {project.Path}"))
+                    {
+                        return false;
+                    }
+                }
             }
-            else
+            if (IsTemporary)
             {
-                DotnetEvent?.Invoke(this, new DotnetEventArgs(true, message, string.Empty, string.Empty));
+                string message = $"Temporary project {Name} was created at {SourceDirectory}.";
+                if (IsVerbose)
+                {
+                    Console.WriteLine(message);
+                }
+                else
+                {
+                    DotnetEvent?.Invoke(this, new DotnetEventArgs(true, message, string.Empty, string.Empty));
+                }
             }
         }
         return true;
