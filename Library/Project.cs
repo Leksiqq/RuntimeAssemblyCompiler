@@ -120,9 +120,9 @@ public class Project : IDisposable
 
     public bool Compile()
     {
-        Thread cleaner = new(() => ClearTemporary());
-        cleaner.IsBackground = true;
-        cleaner.Start();
+        //Thread cleaner = new(() => ClearTemporary());
+        //cleaner.IsBackground = true;
+        //cleaner.Start();
 
         if (!CreateProjectFile())
         {

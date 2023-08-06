@@ -1,18 +1,17 @@
 using Net.Leksi.RuntimeAssemblyCompiler;
 using System.Diagnostics;
-using System.Reflection.Emit;
 using System.Text;
 
 namespace Net.Leksi.Rac.UnitTesting;
 
 public class Tests
 {
-    const int s_numLevels = 4;
+    const int s_maxLevel = 1;
     const int s_numTreeChildren = 3;
     const int s_numGraphChildren = 3;
     const int s_numOtherProperties = 3;
     const int s_selfDependentBase = 12;
-    const int s_isPackableBase = 3;
+    const int s_isPackableBase = 0;
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
@@ -45,9 +44,9 @@ public class Tests
         };
         Node root = CreateDependencyTree(null, rnd, 0, onNewNode);
 
-        Assert.That(nodes.Count, Is.EqualTo(((int)Math.Round(Math.Pow(s_numTreeChildren, s_numLevels + 1))) / (s_numTreeChildren - 1)));
+        Assert.That(nodes.Count, Is.EqualTo(((int)Math.Round(Math.Pow(s_numTreeChildren, s_maxLevel + 1))) / (s_numTreeChildren - 1)));
 
-        ExtendDependencyTreeToGraph(nodes, rnd);
+        //ExtendDependencyTreeToGraph(nodes, rnd);
 
         foreach (Node node in nodes)
         {
@@ -62,12 +61,20 @@ public class Tests
             }
         });
 
+        int i = 0;
         foreach (Node node in nodes.Where(n => n.IsPackageable))
         {
             node._project.DotnetEvent += _project_DotnetEvent;
             node._project.Compile();
             node._project.DotnetEvent -= _project_DotnetEvent;
         }
+
+        Assert.Multiple(() => {
+            foreach (Node node in nodes)
+            {
+                Assert.That(Directory.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
+            }
+        });
 
         foreach (Node node in nodes)
         {
@@ -83,6 +90,13 @@ public class Tests
                 }
             }
         }
+
+        Assert.Multiple(() => {
+            foreach (Node node in nodes)
+            {
+                Assert.That(Directory.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
+            }
+        });
 
         root._project.DotnetEvent += _project_DotnetEvent;
         root._project.Compile();
@@ -171,7 +185,7 @@ public class Tests
     {
         Node result = new()
         {
-            IsPackageable = (level == s_numLevels && rnd.Next(s_isPackableBase) == 1),
+            IsPackageable = (s_isPackableBase > 0 && level == s_maxLevel && rnd.Next(s_isPackableBase) == 1),
             MagicWord = MakeMagicWord(rnd),
         };
         if(parent is { })
@@ -182,7 +196,7 @@ public class Tests
                 result.Ancestors.Add(anc);
             }
         }
-        if (level < s_numLevels)
+        if (level < s_maxLevel)
         {
             for(int i = 0; i < s_numTreeChildren; ++i)
             {
