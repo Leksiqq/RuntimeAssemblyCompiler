@@ -54,10 +54,12 @@ public class Tests
             CreateClassSource(node);
         }
 
-        foreach (Node node in nodes)
-        {
-            Assert.That(File.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
-        }
+        Assert.Multiple(() => {
+            foreach (Node node in nodes)
+            {
+                Assert.That(File.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
+            }
+        });
 
         foreach (Node node in nodes.Where(n => n.IsPackageable))
         {
