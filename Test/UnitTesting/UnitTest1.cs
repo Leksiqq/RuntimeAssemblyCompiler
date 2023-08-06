@@ -52,12 +52,13 @@ public class Tests
         foreach (Node node in nodes)
         {
             CreateClassSource(node);
+            Assert.That(Directory.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
         }
 
         Assert.Multiple(() => {
             foreach (Node node in nodes)
             {
-                Assert.That(File.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
+                Assert.That(Directory.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
             }
         });
 

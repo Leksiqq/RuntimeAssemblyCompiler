@@ -181,6 +181,7 @@ public class Project : IDisposable
             Directory.Exists(tempDirectory); tempDirectory = Path.Combine(appDataDirectory,
             Path.GetRandomFileName())
         ) { }
+        Console.WriteLine($"CreateDirectory: {tempDirectory}");
         Directory.CreateDirectory(tempDirectory);
         return tempDirectory;
     }
