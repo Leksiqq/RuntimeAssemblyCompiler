@@ -6,12 +6,12 @@ namespace Net.Leksi.Rac.UnitTesting;
 
 public class Tests
 {
-    const int s_maxLevel = 1;
+    const int s_maxLevel = 4;
     const int s_numTreeChildren = 3;
     const int s_numGraphChildren = 3;
     const int s_numOtherProperties = 3;
     const int s_selfDependentBase = 12;
-    const int s_isPackableBase = 0;
+    const int s_isPackableBase = 1;
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
@@ -54,7 +54,8 @@ public class Tests
             Assert.That(Directory.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
         }
 
-        Assert.Multiple(() => {
+        Assert.Multiple(() =>
+        {
             foreach (Node node in nodes)
             {
                 Assert.That(Directory.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
@@ -62,14 +63,15 @@ public class Tests
         });
 
         int i = 0;
-        foreach (Node node in nodes.Where(n => n.IsPackageable))
+        foreach (Node node in nodes.Where(n => n.IsPackable))
         {
             node._project.DotnetEvent += _project_DotnetEvent;
             node._project.Compile();
             node._project.DotnetEvent -= _project_DotnetEvent;
         }
 
-        Assert.Multiple(() => {
+        Assert.Multiple(() =>
+        {
             foreach (Node node in nodes)
             {
                 Assert.That(Directory.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
@@ -91,7 +93,8 @@ public class Tests
             }
         }
 
-        Assert.Multiple(() => {
+        Assert.Multiple(() =>
+        {
             foreach (Node node in nodes)
             {
                 Assert.That(Directory.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
@@ -107,13 +110,13 @@ public class Tests
 
     private void ExtendDependencyTreeToGraph(List<Node> nodes, Random rnd)
     {
-        foreach(Node node in nodes.Where(n => !n.IsPackageable))
+        foreach (Node node in nodes.Where(n => !n.IsPackable))
         {
-            if(rnd.Next(s_selfDependentBase) == 4)
+            if (rnd.Next(s_selfDependentBase) == 4)
             {
                 node.Children.Add(node);
             }
-            while(node.Children.Count < s_numTreeChildren + s_numGraphChildren)
+            while (node.Children.Count < s_numTreeChildren + s_numGraphChildren)
             {
                 Node[] avail = nodes.Where(
                     n => n != node
@@ -148,7 +151,7 @@ public class Tests
         node._project = Project.Create(new ProjectOptions
         {
             Name = node.Name,
-            GeneratePackage = node.IsPackageable,
+            GeneratePackage = node.IsPackable,
             TargetFramework = "net6.0-windows",
         });
         File.WriteAllText(Path.Combine(node._project.SourceDirectory, "magic.txt"), node.MagicWord);
@@ -185,20 +188,20 @@ public class Tests
     {
         Node result = new()
         {
-            IsPackageable = (s_isPackableBase > 0 && level == s_maxLevel && rnd.Next(s_isPackableBase) == 1),
+            IsPackable = (s_isPackableBase > 0 && level == s_maxLevel && rnd.Next(s_isPackableBase) == s_isPackableBase - 1),
             MagicWord = MakeMagicWord(rnd),
         };
-        if(parent is { })
+        if (parent is { })
         {
             result.Ancestors.Add(parent);
-            foreach(Node anc in parent.Ancestors)
+            foreach (Node anc in parent.Ancestors)
             {
                 result.Ancestors.Add(anc);
             }
         }
         if (level < s_maxLevel)
         {
-            for(int i = 0; i < s_numTreeChildren; ++i)
+            for (int i = 0; i < s_numTreeChildren; ++i)
             {
                 result.Children.Add(CreateDependencyTree(result, rnd, level + 1, onNewNode));
             }
@@ -210,7 +213,7 @@ public class Tests
     private string MakeMagicWord(Random rnd)
     {
         StringBuilder sb = new();
-        for(int i = 0; i < 5; ++i)
+        for (int i = 0; i < 5; ++i)
         {
             sb.Append((char)rnd.Next(33, 127));
         }
@@ -222,7 +225,7 @@ public class Tests
         internal static int s_genId = 0;
         internal Project _project = null!;
         internal string Name { get; init; }
-        internal bool IsPackageable { get; init; } = false;
+        internal bool IsPackable { get; init; } = false;
         internal List<Node> Children { get; init; } = new();
         internal HashSet<Node> Ancestors { get; init; } = new();
         internal string MagicWord { get; init; } = string.Empty;

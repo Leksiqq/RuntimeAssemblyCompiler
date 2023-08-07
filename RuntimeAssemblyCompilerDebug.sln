@@ -3,13 +3,13 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.6.33829.357
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Starter", "Demo\RACWebApp\Starter\StarterDebug.csproj", "{AC137943-34DD-432A-89A0-E2257558615A}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "StarterDebug", "Demo\RACWebApp\Starter\StarterDebug.csproj", "{AC137943-34DD-432A-89A0-E2257558615A}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Common", "Demo\RACWebApp\Common\Common.csproj", "{89220435-A122-483F-B953-EC0C7A9214A5}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RuntimeAssemblyCompiler", "Library\RuntimeAssemblyCompilerDebug.csproj", "{C54C90CD-69B8-470A-AF87-4CBCAE6015FD}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RuntimeAssemblyCompilerDebug", "Library\RuntimeAssemblyCompilerDebug.csproj", "{C54C90CD-69B8-470A-AF87-4CBCAE6015FD}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "UnitTestingDebug", "Test\UnitTesting\UnitTestingDebug.csproj", "{E45AD2D8-D584-402E-AC88-652E36F24DDD}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "UnitTesting", "Test\UnitTesting\UnitTesting.csproj", "{BDE00454-1A36-4058-9FC1-0BCD5BCCF4D2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -29,10 +29,10 @@ Global
 		{C54C90CD-69B8-470A-AF87-4CBCAE6015FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C54C90CD-69B8-470A-AF87-4CBCAE6015FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C54C90CD-69B8-470A-AF87-4CBCAE6015FD}.Release|Any CPU.Build.0 = Release|Any CPU
-		{E45AD2D8-D584-402E-AC88-652E36F24DDD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{E45AD2D8-D584-402E-AC88-652E36F24DDD}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{E45AD2D8-D584-402E-AC88-652E36F24DDD}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{E45AD2D8-D584-402E-AC88-652E36F24DDD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BDE00454-1A36-4058-9FC1-0BCD5BCCF4D2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BDE00454-1A36-4058-9FC1-0BCD5BCCF4D2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BDE00454-1A36-4058-9FC1-0BCD5BCCF4D2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BDE00454-1A36-4058-9FC1-0BCD5BCCF4D2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
