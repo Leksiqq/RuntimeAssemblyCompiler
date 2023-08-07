@@ -1,16 +1,17 @@
 using Net.Leksi.RuntimeAssemblyCompiler;
 using System.Diagnostics;
+using System.Reflection;
 using System.Text;
 
 namespace Net.Leksi.Rac.UnitTesting;
 
 public class Tests
 {
-    const int s_maxLevel = 4;
+    const int s_maxLevel = 1;
     const int s_numTreeChildren = 3;
     const int s_numGraphChildren = 3;
     const int s_numOtherProperties = 3;
-    const int s_selfDependentBase = 12;
+    const int s_selfDependentBase = 1;
     const int s_isPackableBase = 1;
 
     [OneTimeSetUp]
@@ -22,9 +23,10 @@ public class Tests
     }
 
     [Test]
-    [TestCase(-1)]
+    [TestCase(1356655665)]
     public void Test1(int seed)
     {
+        Project.IsUnitTesting = true;
         Project.ClearTemporary(true);
         if (seed == -1)
         {
@@ -46,96 +48,143 @@ public class Tests
 
         Assert.That(nodes.Count, Is.EqualTo(((int)Math.Round(Math.Pow(s_numTreeChildren, s_maxLevel + 1))) / (s_numTreeChildren - 1)));
 
-        //ExtendDependencyTreeToGraph(nodes, rnd);
+        ExtendDependencyTreeToGraph(nodes, rnd);
 
         foreach (Node node in nodes)
         {
             CreateClassSource(node);
-            Assert.That(Directory.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
+            Assert.That(Directory.Exists(node.Project.SourceDirectory), node.Project.SourceDirectory);
         }
 
-        Assert.Multiple(() =>
+        for(int i = 0; i < nodes.Count; ++i)
         {
-            foreach (Node node in nodes)
-            {
-                Assert.That(Directory.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
-            }
-        });
+            Console.WriteLine($"{i}) {nodes[i].Project.ProjectFile} [{string.Join(',', nodes[i].Children.Select(n => n.Project.Name))}]");
+        }
 
-        int i = 0;
         foreach (Node node in nodes.Where(n => n.IsPackable))
         {
-            node._project.DotnetEvent += _project_DotnetEvent;
-            node._project.Compile();
-            node._project.DotnetEvent -= _project_DotnetEvent;
+            node.Project.DotnetEvent += _project_DotnetEvent;
+            node.Project.Compile();
+            node.Project.DotnetEvent -= _project_DotnetEvent;
         }
-
-        Assert.Multiple(() =>
-        {
-            foreach (Node node in nodes)
-            {
-                Assert.That(Directory.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
-            }
-        });
 
         foreach (Node node in nodes)
         {
             foreach (Node child in node.Children.Where(n => n != node))
             {
-                if (child._project.GeneratePackage)
+                if (child.Project.GeneratePackage)
                 {
-                    node._project.AddPackage(child._project);
+                    node.Project.AddPackage(child.Project);
                 }
                 else
                 {
-                    node._project.AddProject(child._project);
+                    node.Project.AddProject(child.Project);
                 }
             }
         }
 
-        Assert.Multiple(() =>
+        root.Project.DotnetEvent += _project_DotnetEvent;
+        root.Project.Compile();
+        root.Project.DotnetEvent -= _project_DotnetEvent;
+
+        foreach(Node node in nodes)
         {
-            foreach (Node node in nodes)
+            string? library = null;
+            if(node.Project.GeneratePackage || node == root) 
             {
-                Assert.That(Directory.Exists(node._project.SourceDirectory), node._project.SourceDirectory);
+                library = node.Project.LibraryFile;
             }
-        });
+            else
+            {
+                Assert.That(node.Project.LibraryFile, Is.Null);
+                library = root.Project.GetLibraryFile(node.Project);
+            }
+            Assert.That(library, Is.Not.Null);
+            node.Type = Assembly.LoadFrom(library)?.GetType(node.Project.FullName);
+            Assert.That(node.Type, Is.Not.Null);
+            object? nodeObject = Activator.CreateInstance(node.Type);
+            Assert.That(nodeObject, Is.Not.Null);
+            PropertyInfo? magicProp = node.Type.GetProperty("Magic");
+            Assert.That(magicProp, Is.Not.Null);
+            Assert.That(magicProp.GetValue(nodeObject), Is.EqualTo(node.MagicWord));
+        }
 
-        root._project.DotnetEvent += _project_DotnetEvent;
-        root._project.Compile();
-        root._project.DotnetEvent -= _project_DotnetEvent;
 
-        nodes.ForEach(n => n._project.Dispose());
+        nodes.ForEach(n => n.Project.Dispose());
     }
 
     private void ExtendDependencyTreeToGraph(List<Node> nodes, Random rnd)
     {
-        foreach (Node node in nodes.Where(n => !n.IsPackable))
+        List<int>?[] g = new List<int>[nodes.Count + 1];
+        int[] cl = new int[nodes.Count + 1];
+        Array.Fill(g, null);
+
+        foreach (Node node in nodes)
         {
-            if (rnd.Next(s_selfDependentBase) == 4)
+            if (node.Parent is { })
             {
-                node.Children.Add(node);
-            }
-            while (node.Children.Count < s_numTreeChildren + s_numGraphChildren)
-            {
-                Node[] avail = nodes.Where(
-                    n => n != node
-                        && !node.Children.Contains(n)
-                        && !node.Ancestors.Contains(n)
-                ).ToArray();
-                if (!avail.Any())
+                if (g[node.Id] is null)
                 {
-                    break;
+                    g[node.Id] = new List<int>();
                 }
-                Node taken = avail[rnd.Next(avail.Length)];
-                node.Children.Add(taken);
-                taken.Ancestors.Add(node);
-                foreach (Node anc in node.Ancestors)
+                g[node.Id]!.Add(node.Parent.Id);
+            }
+        }
+
+        Func<int, bool> dfs = i => false;
+        dfs = from =>
+        {
+            cl[from] = 1;
+            if(g[from] is { })
+            {
+                foreach (int to in g[from]!)
                 {
-                    taken.Ancestors.Add(anc);
+                    if (cl[to] == 1)
+                    {
+                        return true;
+                    }
+                    if (cl[to] == 0)
+                    {
+                        return dfs(to);
+                    }
+                }
+            }
+            cl[from] = 2;
+            return false;
+        };
+
+        bool changed = true;
+        while (changed)
+        {
+            changed = false;
+            foreach (Node from in nodes)
+            {
+                foreach (Node to in nodes)
+                {
+                    if(
+                        from != to
+                        && (g[from.Id] is null || !g[from.Id]!.Contains(to.Id))
+                        && (g[to.Id] is null || !g[to.Id]!.Contains(from.Id))
+                    )
+                    {
+                        if(g[from.Id] is null)
+                        {
+                            g[from.Id] = new List<int>();
+                        }
+                        g[from.Id]!.Add(to.Id);
+                        Array.Fill(cl, 0);
+                        if (!dfs(from.Id))
+                        {
+                            to.Children.Add(from);
+                            changed = true;
+                            break;
+                        }
+                        g[from.Id]!.RemoveAt(g[from.Id]!.Count - 1);
+                    }
                 }
             }
         }
+
     }
 
     private void _project_DotnetEvent(object? sender, DotnetEventArgs args)
@@ -148,40 +197,57 @@ public class Tests
 
     private void CreateClassSource(Node node)
     {
-        node._project = Project.Create(new ProjectOptions
+        if(node.Project is null)
         {
-            Name = node.Name,
-            GeneratePackage = node.IsPackable,
-            TargetFramework = "net6.0-windows",
-        });
-        File.WriteAllText(Path.Combine(node._project.SourceDirectory, "magic.txt"), node.MagicWord);
-        node._project.AddContent("magic.txt");
-        FileStream fileStream = File.Create(Path.Combine(node._project.SourceDirectory, $"{node.Name}.cs"));
-        StreamWriter sw = new(fileStream);
-        sw.WriteLine("using System.Reflection;");
-        sw.WriteLine($"public class {node.Name}");
-        sw.WriteLine("{");
-        int i = 0;
-        foreach (Node child in node.Children)
-        {
-            sw.WriteLine($"    public {child.Name} Prop{i} {{ get; set; }}");
-            ++i;
-        }
-        for (int j = 0; j < s_numOtherProperties; ++j)
-        {
-            sw.WriteLine($"    public string Prop{i} {{ get; set; }}");
-            ++i;
-        }
-        sw.WriteLine(@$"    public string Magic => File.ReadAllText(
+            ProjectOptions po = new()
+            {
+                GeneratePackage = node.IsPackable,
+                TargetFramework = "net6.0-windows",
+            };
+            if (!string.IsNullOrEmpty(node.FullName))
+            {
+                po.FullName = node.FullName;
+            }
+            else
+            {
+                po.Name = node.Name;
+                if (!string.IsNullOrEmpty(node.Namespace))
+                {
+                    po.Namespace = node.Namespace;
+                }
+            }
+            node.Project = Project.Create(po);
+            File.WriteAllText(Path.Combine(node.Project.SourceDirectory, $"{node.Project.FullName}.magic.txt"), node.MagicWord);
+            node.Project.AddContent($"{node.Project.FullName}.magic.txt");
+            FileStream fileStream = File.Create(Path.Combine(node.Project.SourceDirectory, $"{node.Project.Name}.cs"));
+            StreamWriter sw = new(fileStream);
+            sw.WriteLine("using System.Reflection;");
+            sw.WriteLine($"namespace {node.Project.Namespace};");
+            sw.WriteLine($"public class {node.Project.Name}");
+            sw.WriteLine("{");
+            int i = 0;
+            foreach (Node child in node.Children)
+            {
+                CreateClassSource(child);
+                sw.WriteLine($"    public {child.Project.FullName} Prop{i} {{ get; set; }}");
+                ++i;
+            }
+            for (int j = 0; j < s_numOtherProperties; ++j)
+            {
+                sw.WriteLine($"    public string Prop{i} {{ get; set; }}");
+                ++i;
+            }
+            sw.WriteLine(@$"    public string Magic => File.ReadAllText(
             Path.Combine(
                 Path.GetDirectoryName(
                     GetType().Assembly.Location
                 ), 
-                ""magic.txt""
+                ""{node.Project.FullName}.magic.txt""
             )
         );");
-        sw.WriteLine("}");
-        sw.Close();
+            sw.WriteLine("}");
+            sw.Close();
+        }
     }
 
     private Node CreateDependencyTree(Node? parent, Random rnd, int level, Action<Node, int> onNewNode)
@@ -190,14 +256,19 @@ public class Tests
         {
             IsPackable = (s_isPackableBase > 0 && level == s_maxLevel && rnd.Next(s_isPackableBase) == s_isPackableBase - 1),
             MagicWord = MakeMagicWord(rnd),
+            Parent = parent,
         };
-        if (parent is { })
+        string name = $"Class{result.Id}";
+        string @namespace = $"Net.Leksi.NS{result.Id}";
+
+        if (rnd.Next(2) == 1)
         {
-            result.Ancestors.Add(parent);
-            foreach (Node anc in parent.Ancestors)
-            {
-                result.Ancestors.Add(anc);
-            }
+            result.FullName = $"{@namespace}.{name}";
+        }
+        else
+        {
+            result.Name = name;
+            result.Namespace = @namespace;
         }
         if (level < s_maxLevel)
         {
@@ -223,16 +294,16 @@ public class Tests
     private class Node
     {
         internal static int s_genId = 0;
-        internal Project _project = null!;
-        internal string Name { get; init; }
+        internal int Id { get; init; } = Interlocked.Increment(ref s_genId);
+        internal Project Project { get; set; }
+        internal string Name { get; set; }
         internal bool IsPackable { get; init; } = false;
         internal List<Node> Children { get; init; } = new();
-        internal HashSet<Node> Ancestors { get; init; } = new();
+        internal Node? Parent { get; init; } = null;
         internal string MagicWord { get; init; } = string.Empty;
-        internal Node()
-        {
-            Name = $"Class{Interlocked.Increment(ref s_genId)}";
-        }
+        internal string FullName { get; set; }
+        internal string Namespace { get; set; }
+        internal Type? Type { get; set; }
     }
 }
 

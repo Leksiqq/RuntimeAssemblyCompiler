@@ -3,6 +3,8 @@
 public class ProjectOptions
 {
     public string Name { get; set; } = null!;
+    public string Namespace { get; set; } = null!;
+    public string FullName { get; set; } = null!;
     public string? SourceDirectory { get; set; } = null;
     public string? Sdk { get; set; } = null;
     public string? TargetFramework { get; set; } = null;

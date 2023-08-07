@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.IO;
 using System.Text;
 using System.Xml;
 using System.Xml.XPath;
@@ -11,7 +12,9 @@ public class Project : IDisposable
 
     private const string s_defaultSdk = "Microsoft.NET.Sdk";
 
-    private static readonly string s_appDataDirectory = typeof(Project).Namespace!;
+    private static string s_appDataDirectory;
+    private static bool s_isUnitTesting;
+
     private const string s_libraryOutputType = "Library";
     private const string s_exeOutputType = "Exe";
     private const string s_true = "True";
@@ -23,10 +26,36 @@ public class Project : IDisposable
     private readonly List<PackageHolder> _packages = new();
     private readonly List<ProjectHolder> _projects = new();
     private readonly List<string> _contents = new();
+    private HashSet<string>? _allContents = null;
 
     private string _lockFile = string.Empty;
 
+    public static bool IsUnitTesting
+    {
+        get => s_isUnitTesting;
+        set {
+            if(value != s_isUnitTesting)
+            {
+                s_isUnitTesting = value;
+                if (s_isUnitTesting)
+                {
+                    s_appDataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), $"{typeof(Project).Namespace!}.Test");
+                }
+                else
+                {
+                    s_appDataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), typeof(Project).Namespace!);
+                }
+                if (!Directory.Exists(s_appDataDirectory))
+                {
+                    Directory.CreateDirectory(s_appDataDirectory);
+                }
+            }
+        }
+    }
+
     public string Name { get; private set; } = null!;
+    public string Namespace { get; private set; } = null!;
+    public string FullName { get; private set; } = null!;
     public string Sdk { get; private set; } = null!;
     public string? SourceDirectory { get; private set; } = null;
     public string? OutputDirectory { get; private set; } = null;
@@ -42,6 +71,11 @@ public class Project : IDisposable
     public bool GeneratePackage { get; private set; } = false;
     public bool IsTemporary { get; private set; } = false;
 
+    static Project()
+    {
+        IsUnitTesting = false;
+    }
+
     ~Project()
     {
         Dispose();
@@ -49,13 +83,48 @@ public class Project : IDisposable
 
     public static Project Create(ProjectOptions options)
     {
-        if (string.IsNullOrEmpty(options.Name))
+        string name = string.Empty;
+        string @namespace = string.Empty;
+
+        if (!string.IsNullOrEmpty(options.FullName))
         {
-            throw new ArgumentNullException(nameof(options.Name));
+            int pos = options.FullName.LastIndexOf('.');
+            if(pos == 0)
+            {
+                throw new ArgumentException($"{nameof(options)}.{nameof(options.FullName)}");
+            }
+            if(pos > 0)
+            {
+                name = options.FullName.Substring(pos + 1);
+                @namespace = options.FullName.Substring(0, pos);
+            }
+            else
+            {
+                name = options.FullName;
+            }
         }
+        else
+        {
+            if (string.IsNullOrEmpty(options.Name))
+            {
+                throw new ArgumentNullException($"{nameof(options)}.{nameof(options.Name)}");
+            }
+            if (options.Name.Contains('.'))
+            {
+                throw new ArgumentException($"{nameof(options)}.{nameof(options.Name)}");
+            }
+            name = options.Name;
+            if (!string.IsNullOrEmpty(options.Namespace))
+            {
+                @namespace = options.Namespace;
+            }
+        }
+
         Project project = new()
         {
-            Name = options.Name,
+            Name = name,
+            Namespace = @namespace,
+            FullName = $"{(string.IsNullOrEmpty(@namespace) ? string.Empty : $"{@namespace}.")}{name}",
             Sdk = options.Sdk ?? s_defaultSdk,
             TargetFramework = options.TargetFramework ??
                 $"net{Environment.Version.Major}.{Environment.Version.Minor}",
@@ -87,7 +156,7 @@ public class Project : IDisposable
 
     public void AddPackage(Project project)
     {
-        AddPackage(project.Name, s_version, project.OutputDirectory);
+        AddPackage(project.FullName, s_version, project.OutputDirectory);
     }
 
     public void AddProject(string path)
@@ -117,13 +186,20 @@ public class Project : IDisposable
         _contents.Add(path);
     }
 
+    public string? GetLibraryFile(Project project)
+    {
+        string result = Path.Combine(OutputDirectory!, $"{project.FullName}.dll");
+        return File.Exists(result) ? result : null;
+    }
+
     public bool Compile()
     {
+        _allContents = new HashSet<string>();
         //Thread cleaner = new(() => ClearTemporary());
         //cleaner.IsBackground = true;
         //cleaner.Start();
 
-        if (!CreateProjectFile())
+        if (!CreateProjectFile(this))
         {
             return false;
         }
@@ -132,10 +208,10 @@ public class Project : IDisposable
 
         if (success)
         {
-            LibraryFile = Path.Combine(OutputDirectory!, $"{Name}.dll");
+            LibraryFile = Path.Combine(OutputDirectory!, $"{FullName}.dll");
             if (IsExecutable)
             {
-                ExeFile = Path.Combine(OutputDirectory!, $"{Name}.exe");
+                ExeFile = Path.Combine(OutputDirectory!, $"{FullName}.exe");
             }
         }
 
@@ -144,13 +220,12 @@ public class Project : IDisposable
 
     public static void ClearTemporary(bool unconditional = false)
     {
-        foreach (string path in Directory.GetDirectories(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), s_appDataDirectory)))
+        foreach (string path in Directory.GetDirectories(s_appDataDirectory))
         {
             if (unconditional || File.Exists(Path.Combine(path, s_disposedFile)))
             {
                 try
                 {
-                    Console.WriteLine($"Delete {path}");
                     Directory.Delete(path, true);
                 }
                 catch { }
@@ -170,22 +245,17 @@ public class Project : IDisposable
 
     private static string GetTemporaryDirectory()
     {
-        string appDataDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            s_appDataDirectory
-        );
         string tempDirectory;
         for (
-            tempDirectory = Path.Combine(appDataDirectory, Path.GetRandomFileName());
-            Directory.Exists(tempDirectory); tempDirectory = Path.Combine(appDataDirectory,
+            tempDirectory = Path.Combine(s_appDataDirectory, Path.GetRandomFileName());
+            Directory.Exists(tempDirectory); tempDirectory = Path.Combine(s_appDataDirectory,
             Path.GetRandomFileName())
         ) { }
-        Console.WriteLine($"CreateDirectory: {tempDirectory}");
         Directory.CreateDirectory(tempDirectory);
         return tempDirectory;
     }
 
-    private bool CreateProjectFile()
+    private bool CreateProjectFile(Project root)
     {
         if (!File.Exists(_lockFile))
         {
@@ -201,7 +271,7 @@ public class Project : IDisposable
         <OutputType>{OutputType}</OutputType>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
-        <AssemblyName>{Name}</AssemblyName>
+        <AssemblyName>{FullName}</AssemblyName>
         <IsPackable>{(GeneratePackage ? s_true : s_false)}</IsPackable>
         <GeneratePackageOnBuild>{(GeneratePackage ? s_true : s_false)}</GeneratePackageOnBuild>
     </PropertyGroup>
@@ -213,6 +283,10 @@ public class Project : IDisposable
                 nav.MoveToChild("ItemGroup", string.Empty);
                 foreach (string path in _contents)
                 {
+                    if (!root._allContents!.Add(path))
+                    {
+                        throw new InvalidOperationException($"Content '{path}' is duplicated!");
+                    }
                     if (!File.Exists(Path.Combine(SourceDirectory!, path)))
                     {
                         string message = $"File to add to output '{path}' not found!";
@@ -233,6 +307,33 @@ public class Project : IDisposable
 </Content>");
                 }
             }
+            if (_projects.Any())
+            {
+                XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!;
+                nav.AppendChild("<ItemGroup/>");
+                nav.MoveToChild("ItemGroup", string.Empty);
+                foreach (ProjectHolder project in _projects)
+                {
+                    if (project.Project is { })
+                    {
+                        if (!File.Exists(project.Project._lockFile))
+                        {
+                            project.Project.TargetFramework = TargetFramework;
+                            project.Project.Configuration = Configuration;
+                            project.Project.IsVerbose = IsVerbose;
+                        }
+                        if (!project.Project.CreateProjectFile(root))
+                        {
+                            return false;
+                        }
+                        nav.AppendChild(@$"<ProjectReference Include=""{project.Project.ProjectFile}"" />");
+                    }
+                    else
+                    {
+                        nav.AppendChild(@$"<ProjectReference Include=""{project.Path}"" />");
+                    }
+                }
+            }
             XmlWriter xw = XmlWriter.Create(ProjectFile, xws);
             xml.WriteTo(xw);
             xw.Close();
@@ -242,35 +343,6 @@ public class Project : IDisposable
                 if (!RunDotnet($"add \"{ProjectFile}\" package {package.Name} --version {package.Version}{(!string.IsNullOrEmpty(package.Source) ? $" --source \"{package.Source}\"" : string.Empty)}"))
                 {
                     return false;
-                }
-            }
-            foreach (ProjectHolder project in _projects)
-            {
-                if (project.Project is { })
-                {
-                    if (!File.Exists(project.Project._lockFile))
-                    {
-                        project.Project.TargetFramework = TargetFramework;
-                        project.Project.Configuration = Configuration;
-                        project.Project.IsVerbose = IsVerbose;
-                        project.Project.DotnetEvent += OnDotnetEvent;
-                        if (
-                            !project.Project.CreateProjectFile()
-                            || !RunDotnet($"add \"{ProjectFile}\" reference {project.Project.ProjectFile}")
-                        )
-                        {
-                            project.Project.DotnetEvent -= OnDotnetEvent;
-                            return false;
-                        }
-                        project.Project.DotnetEvent -= OnDotnetEvent;
-                    }
-                }
-                else
-                {
-                    if (!RunDotnet($"add \"{ProjectFile}\" reference {project.Path}"))
-                    {
-                        return false;
-                    }
                 }
             }
             if (IsTemporary)
