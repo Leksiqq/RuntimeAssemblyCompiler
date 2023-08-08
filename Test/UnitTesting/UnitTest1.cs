@@ -107,6 +107,58 @@ public class Tests
 
     private static void ExtendDependencyTreeToGraph(List<Node> nodes, Random rnd)
     {
+        Dictionary<Node, List<Node>> indirectDependents = new();
+
+        foreach (Node node in nodes)
+        {
+            if (node.Parent is { })
+            {
+                indirectDependents.Add(node, new List<Node>() { node.Parent });
+            }
+        }
+
+        List<Node> nodesToFindAliens = nodes.ToList();
+        bool changed = true;
+        while (changed)
+        {
+            changed = false;
+            for(int i = nodesToFindAliens.Count - 1; i >= 0; --i)
+            {
+                List<Node> aliens = nodes.ToList();
+                WalkDependents(nodesToFindAliens[i], aliens, indirectDependents);
+                if (!aliens.Any())
+                {
+                    nodesToFindAliens.RemoveAt(i);
+                }
+                else
+                {
+                    nodesToFindAliens[i].Children.Add(aliens[0]);
+                    if (!indirectDependents.ContainsKey(aliens[0]))
+                    {
+                        indirectDependents.Add(aliens[0], new List<Node>());
+                    }
+                    indirectDependents[aliens[0]].Add(nodesToFindAliens[i]);
+                    if (aliens.Count == 1)
+                    {
+                        nodesToFindAliens.RemoveAt(i);
+                    }
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    private static void WalkDependents(Node node, List<Node> aliens, Dictionary<Node, List<Node>> indirectDependents)
+    {
+        aliens.Remove(node);
+        if(indirectDependents.TryGetValue(node, out List<Node>? indDeps))
+        {
+            indDeps.ForEach(e => WalkDependents(e, aliens, indirectDependents));
+        }
+    }
+
+    private static void ExtendDependencyTreeToGraph1(List<Node> nodes, Random rnd)
+    {
         List<int>[] g = new List<int>[nodes.Count + 1];
         for (int i = 1; i < g.Length; ++i)
         {
