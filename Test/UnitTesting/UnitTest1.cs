@@ -7,11 +7,9 @@ namespace Net.Leksi.Rac.UnitTesting;
 
 public class Tests
 {
-    const int s_maxLevel = 1;
+    const int s_maxLevel = 2;
     const int s_numTreeChildren = 3;
-    const int s_numGraphChildren = 3;
     const int s_numOtherProperties = 3;
-    const int s_selfDependentBase = 1;
     const int s_isPackableBase = 1;
 
     [OneTimeSetUp]
@@ -27,7 +25,6 @@ public class Tests
     public void Test1(int seed)
     {
         Project.IsUnitTesting = true;
-        Project.ClearTemporary(true);
         if (seed == -1)
         {
             seed = (int)(long.Parse(
@@ -56,16 +53,11 @@ public class Tests
             Assert.That(Directory.Exists(node.Project.SourceDirectory), node.Project.SourceDirectory);
         }
 
-        for(int i = 0; i < nodes.Count; ++i)
-        {
-            Console.WriteLine($"{i}) {nodes[i].Project.ProjectFile} [{string.Join(',', nodes[i].Children.Select(n => n.Project.Name))}]");
-        }
-
         foreach (Node node in nodes.Where(n => n.IsPackable))
         {
-            node.Project.DotnetEvent += _project_DotnetEvent;
+            node.Project.DotnetEvent += ProjectDotnetEvent;
             node.Project.Compile();
-            node.Project.DotnetEvent -= _project_DotnetEvent;
+            node.Project.DotnetEvent -= ProjectDotnetEvent;
         }
 
         foreach (Node node in nodes)
@@ -83,14 +75,14 @@ public class Tests
             }
         }
 
-        root.Project.DotnetEvent += _project_DotnetEvent;
+        root.Project.DotnetEvent += ProjectDotnetEvent;
         root.Project.Compile();
-        root.Project.DotnetEvent -= _project_DotnetEvent;
+        root.Project.DotnetEvent -= ProjectDotnetEvent;
 
-        foreach(Node node in nodes)
+        foreach (Node node in nodes)
         {
             string? library = null;
-            if(node.Project.GeneratePackage || node == root) 
+            if (node.Project.GeneratePackage || node == root)
             {
                 library = node.Project.LibraryFile;
             }
@@ -113,81 +105,74 @@ public class Tests
         nodes.ForEach(n => n.Project.Dispose());
     }
 
-    private void ExtendDependencyTreeToGraph(List<Node> nodes, Random rnd)
+    private static void ExtendDependencyTreeToGraph(List<Node> nodes, Random rnd)
     {
-        List<int>?[] g = new List<int>[nodes.Count + 1];
+        List<int>[] g = new List<int>[nodes.Count + 1];
+        for (int i = 1; i < g.Length; ++i)
+        {
+            g[i] = new List<int>();
+        }
         int[] cl = new int[nodes.Count + 1];
-        Array.Fill(g, null);
 
         foreach (Node node in nodes)
         {
             if (node.Parent is { })
             {
-                if (g[node.Id] is null)
-                {
-                    g[node.Id] = new List<int>();
-                }
                 g[node.Id]!.Add(node.Parent.Id);
             }
         }
-
-        Func<int, bool> dfs = i => false;
-        dfs = from =>
-        {
-            cl[from] = 1;
-            if(g[from] is { })
-            {
-                foreach (int to in g[from]!)
-                {
-                    if (cl[to] == 1)
-                    {
-                        return true;
-                    }
-                    if (cl[to] == 0)
-                    {
-                        return dfs(to);
-                    }
-                }
-            }
-            cl[from] = 2;
-            return false;
-        };
 
         bool changed = true;
         while (changed)
         {
             changed = false;
-            foreach (Node from in nodes)
+            foreach (Node to in nodes.Where(n => !n.IsPackable))
             {
-                foreach (Node to in nodes)
+                foreach (Node from in nodes.Where(n =>
+                    n != to
+                    && !to.Children.Contains(n)
+                    && !n.Children.Contains(to)
+                ))
                 {
-                    if(
-                        from != to
-                        && (g[from.Id] is null || !g[from.Id]!.Contains(to.Id))
-                        && (g[to.Id] is null || !g[to.Id]!.Contains(from.Id))
-                    )
+                    g[from.Id]!.Add(to.Id);
+                    Array.Fill(cl, 0);
+                    cl[from.Id] = 1;
+                    if (!Dfs(to.Id, g, cl))
                     {
-                        if(g[from.Id] is null)
-                        {
-                            g[from.Id] = new List<int>();
-                        }
-                        g[from.Id]!.Add(to.Id);
-                        Array.Fill(cl, 0);
-                        if (!dfs(from.Id))
-                        {
-                            to.Children.Add(from);
-                            changed = true;
-                            break;
-                        }
-                        g[from.Id]!.RemoveAt(g[from.Id]!.Count - 1);
+                        to.Children.Add(from);
+                        changed = true;
+                        break;
                     }
+                    g[from.Id]!.RemoveAt(g[from.Id]!.Count - 1);
                 }
             }
         }
 
     }
 
-    private void _project_DotnetEvent(object? sender, DotnetEventArgs args)
+    private static bool Dfs(int from, List<int>[] g, int[] cl)
+    {
+        bool result = false;
+        cl[from] = 1;
+        foreach (int to in g[from]!)
+        {
+            if (
+                cl[to] == 1
+                || (
+                    cl[to] == 0
+                    && Dfs(to, g, cl)
+                )
+            )
+            {
+                result = true;
+                break;
+            }
+        }
+        cl[from] = 2;
+        return result;
+    }
+
+    private static void ProjectDotnetEvent(object? sender, DotnetEventArgs args)
     {
         if (!args.Success)
         {
@@ -195,9 +180,9 @@ public class Tests
         }
     }
 
-    private void CreateClassSource(Node node)
+    private static void CreateClassSource(Node node)
     {
-        if(node.Project is null)
+        if (node.Project is null)
         {
             ProjectOptions po = new()
             {
@@ -217,9 +202,9 @@ public class Tests
                 }
             }
             node.Project = Project.Create(po);
-            File.WriteAllText(Path.Combine(node.Project.SourceDirectory, $"{node.Project.FullName}.magic.txt"), node.MagicWord);
+            File.WriteAllText(Path.Combine(node.Project.SourceDirectory!, $"{node.Project.FullName}.magic.txt"), node.MagicWord);
             node.Project.AddContent($"{node.Project.FullName}.magic.txt");
-            FileStream fileStream = File.Create(Path.Combine(node.Project.SourceDirectory, $"{node.Project.Name}.cs"));
+            FileStream fileStream = File.Create(Path.Combine(node.Project.SourceDirectory!, $"{node.Project.Name}.cs"));
             StreamWriter sw = new(fileStream);
             sw.WriteLine("using System.Reflection;");
             sw.WriteLine($"namespace {node.Project.Namespace};");
@@ -250,7 +235,7 @@ public class Tests
         }
     }
 
-    private Node CreateDependencyTree(Node? parent, Random rnd, int level, Action<Node, int> onNewNode)
+    private static Node CreateDependencyTree(Node? parent, Random rnd, int level, Action<Node, int> onNewNode)
     {
         Node result = new()
         {
@@ -281,7 +266,7 @@ public class Tests
         return result;
     }
 
-    private string MakeMagicWord(Random rnd)
+    private static string MakeMagicWord(Random rnd)
     {
         StringBuilder sb = new();
         for (int i = 0; i < 5; ++i)

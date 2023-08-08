@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.IO;
 using System.Text;
 using System.Xml;
 using System.Xml.XPath;
@@ -12,8 +11,12 @@ public class Project : IDisposable
 
     private const string s_defaultSdk = "Microsoft.NET.Sdk";
 
-    private static string s_appDataDirectory;
-    private static bool s_isUnitTesting;
+    private static string? s_appDataDirectory;
+    private static bool s_isUnitTesting = false;
+    private static bool s_projectCreated = false;
+
+    private static Thread? s_cleanerThread = null;
+    private static object s_lock = new();
 
     private const string s_libraryOutputType = "Library";
     private const string s_exeOutputType = "Exe";
@@ -32,23 +35,44 @@ public class Project : IDisposable
 
     public static bool IsUnitTesting
     {
-        get => s_isUnitTesting;
-        set {
-            if(value != s_isUnitTesting)
+        get 
+        {
+            lock (s_lock)
             {
-                s_isUnitTesting = value;
-                if (s_isUnitTesting)
+                return s_isUnitTesting!;
+            }
+        }
+        set {
+            if(!s_projectCreated)
+            {
+                lock (s_lock)
                 {
-                    s_appDataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), $"{typeof(Project).Namespace!}.Test");
+                    if (!s_projectCreated)
+                    {
+                        s_isUnitTesting = value;
+                        if (value)
+                        {
+                            s_appDataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), $"{typeof(Project).Namespace!}.Test");
+                        }
+                        else
+                        {
+                            s_appDataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), typeof(Project).Namespace!);
+                        }
+                        if (!Directory.Exists(s_appDataDirectory))
+                        {
+                            Directory.CreateDirectory(s_appDataDirectory);
+
+                        }
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Cannot change {nameof(IsUnitTesting)}!");
+                    }
                 }
-                else
-                {
-                    s_appDataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), typeof(Project).Namespace!);
-                }
-                if (!Directory.Exists(s_appDataDirectory))
-                {
-                    Directory.CreateDirectory(s_appDataDirectory);
-                }
+            }
+            else
+            {
+                throw new InvalidOperationException($"Cannot change {nameof(IsUnitTesting)}!");
             }
         }
     }
@@ -83,6 +107,31 @@ public class Project : IDisposable
 
     public static Project Create(ProjectOptions options)
     {
+        lock (s_lock)
+        {
+            if (s_isUnitTesting)
+            {
+                if (s_cleanerThread is null)
+                {
+                    s_cleanerThread = new(() =>
+                    {
+                        ClearTemporary();
+                        lock (s_lock)
+                        {
+                            s_cleanerThread = null;
+                        }
+                    });
+                    s_cleanerThread.IsBackground = true;
+                    s_cleanerThread.Start();
+                }
+            }
+            else
+            {
+                ClearTemporary();
+            }
+            s_projectCreated = true;
+        }
+
         string name = string.Empty;
         string @namespace = string.Empty;
 
@@ -195,9 +244,6 @@ public class Project : IDisposable
     public bool Compile()
     {
         _allContents = new HashSet<string>();
-        //Thread cleaner = new(() => ClearTemporary());
-        //cleaner.IsBackground = true;
-        //cleaner.Start();
 
         if (!CreateProjectFile(this))
         {
