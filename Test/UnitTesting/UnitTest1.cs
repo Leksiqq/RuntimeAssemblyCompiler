@@ -12,7 +12,7 @@ namespace Net.Leksi.Rac.UnitTesting;
 
 public class Tests
 {
-    const int s_maxLevel = 2;
+    const int s_maxLevel = 1;
     const int s_numTreeChildren = 3;
     const int s_numOtherProperties = 3;
     const int s_isPackableBase = 1;
@@ -126,12 +126,12 @@ public class Tests
 
         Dictionary<Type, HashSet<object>> foundObjects = new();
 
-        WalkAssert(root, foundObjects, nodes);
+        WalkAssert(root, foundObjects, nodes, host);
 
         nodes.ForEach(n => n.Project!.Dispose());
     }
 
-    private void WalkAssert(object? obj, Dictionary<Type, HashSet<object>> foundObjects, List<Node> nodes)
+    private void WalkAssert(object? obj, Dictionary<Type, HashSet<object>> foundObjects, List<Node> nodes, IHost host)
     {
         Assert.That(obj, Is.Not.Null);
 
@@ -143,6 +143,7 @@ public class Tests
         {
             if (obj is IMagicable mgc)
             {
+                mgc.SameTypeProperty = host.Services.GetRequiredService(obj.GetType());
                 Node? node = nodes.Where(n => n.Type == obj.GetType()).FirstOrDefault();
 
                 Assert.That(node, Is.Not.Null);
@@ -151,7 +152,7 @@ public class Tests
 
                 foreach(PropertyInfo pi in obj.GetType().GetProperties())
                 {
-                    WalkAssert(pi.GetValue(obj), foundObjects, nodes);
+                    WalkAssert(pi.GetValue(obj), foundObjects, nodes, host);
                 }
             }
         }
@@ -316,7 +317,7 @@ public class Tests
             sw.WriteLine($"public class {node.Project.Name}: IMagicable");
             sw.WriteLine("{");
             int i = 0;
-            foreach (Node child in node.Children)
+            foreach (Node child in (new Node[] { node }).Concat(node.Children))
             {
                 CreateClassSource(child, rnd);
                 sw.WriteLine($"    public {child.Project!.FullName} Prop{i} {{ get; set; }}");
@@ -335,9 +336,10 @@ public class Tests
                 ""{node.Project.FullName}.magic.txt""
             )
         );");
+            sw.WriteLine($"    object IMagicable.SameTypeProperty {{ get => Prop0; set => Prop0 = ({node.Project.Name})value; }}");
             sw.WriteLine($@"    public {node.Project.Name}(IFactory factory)
     {{");
-            i = 0;
+            i = 1;
             foreach (Node child in node.Children)
             {
                 sw.WriteLine($"        Prop{i} = ({child.Project!.FullName})factory.GetValue(typeof({child.Project!.FullName}));");

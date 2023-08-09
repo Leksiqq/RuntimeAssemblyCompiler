@@ -3,4 +3,5 @@
 public interface IMagicable
 {
     string Magic { get; }
+    object SameTypeProperty { get; set; }
 }

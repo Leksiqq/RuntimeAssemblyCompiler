@@ -3,7 +3,7 @@
     <TargetFramework>net6.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <CommonVersion>1.0.3</CommonVersion>
+    <CommonVersion>1.0.5</CommonVersion>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
