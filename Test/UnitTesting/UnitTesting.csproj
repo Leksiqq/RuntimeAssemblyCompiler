@@ -1,15 +1,16 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net6.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-
+    <CommonVersion>1.0.3</CommonVersion>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="7.0.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.1.0" />
+    <PackageReference Include="Net.Leksi.RACWebApp.Common" Version="$(CommonVersion)" />
     <PackageReference Include="NUnit" Version="3.13.3" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.2.1" />
     <PackageReference Include="NUnit.Analyzers" Version="3.3.0" />
@@ -18,6 +19,18 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Library\RuntimeAssemblyCompilerDebug.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Net.Leksi.RACWebApp.Common.$(CommonVersion).nupkg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="Net.Leksi.Rac.UnitTesting.MyAttribute">
+      <_Parameter1>$(CommonVersion)</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
 </Project>

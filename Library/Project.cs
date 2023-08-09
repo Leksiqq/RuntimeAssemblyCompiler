@@ -35,15 +35,16 @@ public class Project : IDisposable
 
     public static bool IsUnitTesting
     {
-        get 
+        get
         {
             lock (s_lock)
             {
                 return s_isUnitTesting!;
             }
         }
-        set {
-            if(!s_projectCreated)
+        set
+        {
+            if (!s_projectCreated)
             {
                 lock (s_lock)
                 {
@@ -107,30 +108,33 @@ public class Project : IDisposable
 
     public static Project Create(ProjectOptions options)
     {
-        lock (s_lock)
+        if (!s_isUnitTesting)
         {
-            if (s_isUnitTesting)
+            if (s_cleanerThread is null)
             {
-                if (s_cleanerThread is null)
+                lock (s_lock)
                 {
-                    s_cleanerThread = new(() =>
+                    if (s_cleanerThread is null)
                     {
-                        ClearTemporary();
-                        lock (s_lock)
+                        s_cleanerThread = new(() =>
                         {
-                            s_cleanerThread = null;
-                        }
-                    });
-                    s_cleanerThread.IsBackground = true;
-                    s_cleanerThread.Start();
+                            ClearTemporary();
+                            lock (s_lock)
+                            {
+                                s_cleanerThread = null;
+                            }
+                        });
+                        s_cleanerThread.IsBackground = true;
+                        s_cleanerThread.Start();
+                    }
                 }
             }
-            else
-            {
-                ClearTemporary();
-            }
-            s_projectCreated = true;
         }
+        else if (!s_projectCreated)
+        {
+            ClearTemporary(true);
+        }
+        s_projectCreated = true;
 
         string name = string.Empty;
         string @namespace = string.Empty;
@@ -138,11 +142,11 @@ public class Project : IDisposable
         if (!string.IsNullOrEmpty(options.FullName))
         {
             int pos = options.FullName.LastIndexOf('.');
-            if(pos == 0)
+            if (pos == 0)
             {
                 throw new ArgumentException($"{nameof(options)}.{nameof(options.FullName)}");
             }
-            if(pos > 0)
+            if (pos > 0)
             {
                 name = options.FullName.Substring(pos + 1);
                 @namespace = options.FullName.Substring(0, pos);
@@ -266,7 +270,7 @@ public class Project : IDisposable
 
     public static void ClearTemporary(bool unconditional = false)
     {
-        foreach (string path in Directory.GetDirectories(s_appDataDirectory))
+        foreach (string path in Directory.GetDirectories(s_appDataDirectory!))
         {
             if (unconditional || File.Exists(Path.Combine(path, s_disposedFile)))
             {
@@ -293,9 +297,8 @@ public class Project : IDisposable
     {
         string tempDirectory;
         for (
-            tempDirectory = Path.Combine(s_appDataDirectory, Path.GetRandomFileName());
-            Directory.Exists(tempDirectory); tempDirectory = Path.Combine(s_appDataDirectory,
-            Path.GetRandomFileName())
+            tempDirectory = Path.Combine(s_appDataDirectory!, Path.GetRandomFileName());
+            Directory.Exists(tempDirectory); tempDirectory = Path.Combine(s_appDataDirectory!, Path.GetRandomFileName())
         ) { }
         Directory.CreateDirectory(tempDirectory);
         return tempDirectory;
@@ -357,7 +360,7 @@ public class Project : IDisposable
             {
                 XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!;
                 nav.AppendChild("<ItemGroup/>");
-                nav.MoveToChild("ItemGroup", string.Empty);
+                nav = nav.SelectSingleNode("ItemGroup[last()]")!;
                 foreach (ProjectHolder project in _projects)
                 {
                     if (project.Project is { })
@@ -380,17 +383,49 @@ public class Project : IDisposable
                     }
                 }
             }
+            if (_packages.Any())
+            {
+                XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!;
+                nav.AppendChild("<ItemGroup/>");
+                nav = nav.SelectSingleNode("ItemGroup[last()]")!;
+                List<string>? sources = null;
+                foreach (PackageHolder package in _packages)
+                {
+                    if (!string.IsNullOrEmpty(package.Source))
+                    {
+                        if(sources is null)
+                        {
+                            sources = new List<string>();
+                        }
+                        sources.Add(package.Source);
+                    }
+                    nav.AppendChild(@$"<PackageReference Include=""{package.Name}"" Version=""{package.Version}"" />");
+                }
+                if(sources?.Any() ?? false)
+                {
+                    XmlDocument nugetConfig = new();
+                    nugetConfig.LoadXml("<configuration><packageSources/></configuration>");
+                    XPathNavigator navNugetConfig = nugetConfig.CreateNavigator()!.SelectSingleNode("/configuration/packageSources")!;
+                    for (int i = 0; i < sources.Count; ++i)
+                    {
+                        navNugetConfig.AppendChild($"<add key=\"key_{i}\" value=\"{sources[i]}\"/>");
+                    }
+                    XmlWriter xw1 = XmlWriter.Create(Path.Combine(SourceDirectory!, "NuGet.Config"), xws);
+                    nugetConfig.WriteTo(xw1);
+                    xw1.Close();
+                }
+            }
             XmlWriter xw = XmlWriter.Create(ProjectFile, xws);
             xml.WriteTo(xw);
             xw.Close();
 
-            foreach (PackageHolder package in _packages)
-            {
-                if (!RunDotnet($"add \"{ProjectFile}\" package {package.Name} --version {package.Version}{(!string.IsNullOrEmpty(package.Source) ? $" --source \"{package.Source}\"" : string.Empty)}"))
-                {
-                    return false;
-                }
-            }
+            //foreach (PackageHolder package in _packages)
+            //{
+            //    if (!RunDotnet($"add \"{ProjectFile}\" package {package.Name} --version {package.Version}{(!string.IsNullOrEmpty(package.Source) ? $" --source \"{package.Source}\"" : string.Empty)}"))
+            //    {
+            //        return false;
+            //    }
+            //}
             if (IsTemporary)
             {
                 string message = $"Temporary project {Name} was created at {SourceDirectory}.";

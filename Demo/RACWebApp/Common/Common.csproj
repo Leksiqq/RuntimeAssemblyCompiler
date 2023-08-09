@@ -7,6 +7,7 @@
     <AssemblyName>Net.Leksi.RACWebApp.Common</AssemblyName>
     <RootNamespace>Net.Leksi.RACWebApp.Common</RootNamespace>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <Version>1.0.3</Version>
   </PropertyGroup>
   <Target Name="CopyPackage" AfterTargets="Pack">
     <Move SourceFiles="$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg" DestinationFolder="W:\C#\nuget.local" />

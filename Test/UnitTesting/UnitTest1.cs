@@ -1,7 +1,12 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Net.Leksi.RACWebApp.Common;
 using Net.Leksi.RuntimeAssemblyCompiler;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Net.Leksi.Rac.UnitTesting;
 
@@ -11,6 +16,7 @@ public class Tests
     const int s_numTreeChildren = 3;
     const int s_numOtherProperties = 3;
     const int s_isPackableBase = 1;
+    const int s_maxObjectsOfType = 3;
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
@@ -24,6 +30,7 @@ public class Tests
     [TestCase(1356655665)]
     public void Test1(int seed)
     {
+        DateTime start = DateTime.Now;
         Project.IsUnitTesting = true;
         if (seed == -1)
         {
@@ -37,6 +44,8 @@ public class Tests
         Random rnd = new Random(seed);
         List<Node> nodes = new();
 
+        string commonVersion = Assembly.GetExecutingAssembly().GetCustomAttribute<MyAttribute>()!.Version;
+
         Action<Node, int> onNewNode = (node, level) =>
         {
             nodes.Add(node);
@@ -45,44 +54,55 @@ public class Tests
 
         Assert.That(nodes.Count, Is.EqualTo(((int)Math.Round(Math.Pow(s_numTreeChildren, s_maxLevel + 1))) / (s_numTreeChildren - 1)));
 
+        Console.WriteLine($"{DateTime.Now - start}: Tree built: (nodes: {nodes.Count}, edges: {nodes.Select(n => n.Children.Count).Sum()})");
+
         ExtendDependencyTreeToGraph(nodes, rnd);
+
+        Console.WriteLine($"{DateTime.Now - start}: Graph built: (nodes: {nodes.Count}, edges: {nodes.Select(n => n.Children.Count).Sum()})");
 
         foreach (Node node in nodes)
         {
-            CreateClassSource(node);
-            Assert.That(Directory.Exists(node.Project.SourceDirectory), node.Project.SourceDirectory);
+            CreateClassSource(node, rnd);
+            Assert.That(Directory.Exists(node.Project!.SourceDirectory), node.Project.SourceDirectory);
         }
 
         foreach (Node node in nodes.Where(n => n.IsPackable))
         {
-            node.Project.DotnetEvent += ProjectDotnetEvent;
+            node.Project!.AddPackage("Net.Leksi.RACWebApp.Common", commonVersion, Path.GetDirectoryName(GetType().Assembly.Location));
+            node.Project!.DotnetEvent += ProjectDotnetEvent;
             node.Project.Compile();
             node.Project.DotnetEvent -= ProjectDotnetEvent;
         }
 
-        foreach (Node node in nodes)
+        Console.WriteLine($"{DateTime.Now - start}: Packages compiled");
+
+        foreach (Node node in nodes.Where(n => !n.IsPackable))
         {
+            node.Project!.AddPackage("Net.Leksi.RACWebApp.Common", commonVersion, Path.GetDirectoryName(GetType().Assembly.Location));
             foreach (Node child in node.Children.Where(n => n != node))
             {
-                if (child.Project.GeneratePackage)
+                if (child.Project!.GeneratePackage)
                 {
-                    node.Project.AddPackage(child.Project);
+                    node.Project!.AddPackage(child.Project);
                 }
                 else
                 {
-                    node.Project.AddProject(child.Project);
+                    node.Project!.AddProject(child.Project);
                 }
             }
         }
 
-        root.Project.DotnetEvent += ProjectDotnetEvent;
+        root.Project!.DotnetEvent += ProjectDotnetEvent;
         root.Project.Compile();
         root.Project.DotnetEvent -= ProjectDotnetEvent;
+
+        IHostBuilder hostBuilder = Host.CreateDefaultBuilder();
+        hostBuilder.ConfigureServices(services => services.AddSingleton<IFactory, Factory>());
 
         foreach (Node node in nodes)
         {
             string? library = null;
-            if (node.Project.GeneratePackage || node == root)
+            if (node.Project!.GeneratePackage || node == root)
             {
                 library = node.Project.LibraryFile;
             }
@@ -94,15 +114,47 @@ public class Tests
             Assert.That(library, Is.Not.Null);
             node.Type = Assembly.LoadFrom(library)?.GetType(node.Project.FullName);
             Assert.That(node.Type, Is.Not.Null);
-            object? nodeObject = Activator.CreateInstance(node.Type);
-            Assert.That(nodeObject, Is.Not.Null);
-            PropertyInfo? magicProp = node.Type.GetProperty("Magic");
-            Assert.That(magicProp, Is.Not.Null);
-            Assert.That(magicProp.GetValue(nodeObject), Is.EqualTo(node.MagicWord));
+            hostBuilder.ConfigureServices(services => services.AddTransient(node.Type!));
         }
 
+        IHost host = hostBuilder.Build();
 
-        nodes.ForEach(n => n.Project.Dispose());
+        (host.Services.GetRequiredService<IFactory>() as Factory)!.MaxObjectsOfType = s_maxObjectsOfType;
+        (host.Services.GetRequiredService<IFactory>() as Factory)!.Random = rnd;
+
+        object nodeObject = host.Services.GetRequiredService(root.Type!);
+
+        Dictionary<Type, HashSet<object>> foundObjects = new();
+
+        WalkAssert(root, foundObjects, nodes);
+
+        nodes.ForEach(n => n.Project!.Dispose());
+    }
+
+    private void WalkAssert(object? obj, Dictionary<Type, HashSet<object>> foundObjects, List<Node> nodes)
+    {
+        Assert.That(obj, Is.Not.Null);
+
+        if (!foundObjects.ContainsKey(obj.GetType()))
+        {
+            foundObjects.Add(obj.GetType(), new HashSet<object>());
+        }
+        if (foundObjects[obj.GetType()].Add(obj))
+        {
+            if (obj is IMagicable mgc)
+            {
+                Node? node = nodes.Where(n => n.Type == obj.GetType()).FirstOrDefault();
+
+                Assert.That(node, Is.Not.Null);
+
+                Assert.That(mgc.Magic, Is.EqualTo(node.MagicWord));
+
+                foreach(PropertyInfo pi in obj.GetType().GetProperties())
+                {
+                    WalkAssert(pi.GetValue(obj), foundObjects, nodes);
+                }
+            }
+        }
     }
 
     private static void ExtendDependencyTreeToGraph(List<Node> nodes, Random rnd)
@@ -117,14 +169,14 @@ public class Tests
             }
         }
 
-        List<Node> nodesToFindAliens = nodes.ToList();
+        List<Node> nodesToFindAliens = nodes.Where(n => !n.IsPackable).ToList();
         bool changed = true;
         while (changed)
         {
             changed = false;
-            for(int i = nodesToFindAliens.Count - 1; i >= 0; --i)
+            for (int i = nodesToFindAliens.Count - 1; i >= 0; --i)
             {
-                List<Node> aliens = nodes.ToList();
+                List<Node> aliens = nodes.Where(n => !nodesToFindAliens[i].Children.Contains(n)).ToList();
                 WalkDependents(nodesToFindAliens[i], aliens, indirectDependents);
                 if (!aliens.Any())
                 {
@@ -151,7 +203,7 @@ public class Tests
     private static void WalkDependents(Node node, List<Node> aliens, Dictionary<Node, List<Node>> indirectDependents)
     {
         aliens.Remove(node);
-        if(indirectDependents.TryGetValue(node, out List<Node>? indDeps))
+        if (indirectDependents.TryGetValue(node, out List<Node>? indDeps))
         {
             indDeps.ForEach(e => WalkDependents(e, aliens, indirectDependents));
         }
@@ -232,7 +284,7 @@ public class Tests
         }
     }
 
-    private static void CreateClassSource(Node node)
+    private static void CreateClassSource(Node node, Random rnd)
     {
         if (node.Project is null)
         {
@@ -247,7 +299,7 @@ public class Tests
             }
             else
             {
-                po.Name = node.Name;
+                po.Name = node.Name!;
                 if (!string.IsNullOrEmpty(node.Namespace))
                 {
                     po.Namespace = node.Namespace;
@@ -259,14 +311,15 @@ public class Tests
             FileStream fileStream = File.Create(Path.Combine(node.Project.SourceDirectory!, $"{node.Project.Name}.cs"));
             StreamWriter sw = new(fileStream);
             sw.WriteLine("using System.Reflection;");
+            sw.WriteLine("using Net.Leksi.RACWebApp.Common;");
             sw.WriteLine($"namespace {node.Project.Namespace};");
-            sw.WriteLine($"public class {node.Project.Name}");
+            sw.WriteLine($"public class {node.Project.Name}: IMagicable");
             sw.WriteLine("{");
             int i = 0;
             foreach (Node child in node.Children)
             {
-                CreateClassSource(child);
-                sw.WriteLine($"    public {child.Project.FullName} Prop{i} {{ get; set; }}");
+                CreateClassSource(child, rnd);
+                sw.WriteLine($"    public {child.Project!.FullName} Prop{i} {{ get; set; }}");
                 ++i;
             }
             for (int j = 0; j < s_numOtherProperties; ++j)
@@ -282,6 +335,20 @@ public class Tests
                 ""{node.Project.FullName}.magic.txt""
             )
         );");
+            sw.WriteLine($@"    public {node.Project.Name}(IFactory factory)
+    {{");
+            i = 0;
+            foreach (Node child in node.Children)
+            {
+                sw.WriteLine($"        Prop{i} = ({child.Project!.FullName})factory.GetValue(typeof({child.Project!.FullName}));");
+                ++i;
+            }
+            for (int j = 0; j < s_numOtherProperties; ++j)
+            {
+                sw.WriteLine($"        Prop{i} = (string)factory.GetValue(typeof(string));");
+                ++i;
+            }
+            sw.WriteLine("    }");
             sw.WriteLine("}");
             sw.Close();
         }
@@ -318,12 +385,17 @@ public class Tests
         return result;
     }
 
-    private static string MakeMagicWord(Random rnd)
+    internal static string MakeMagicWord(Random rnd)
     {
         StringBuilder sb = new();
         for (int i = 0; i < 5; ++i)
         {
-            sb.Append((char)rnd.Next(33, 127));
+            char ch = (char)rnd.Next(33, 127);
+            if (ch == '"' || ch == '\\')
+            {
+                sb.Append('\\');
+            }
+            sb.Append(ch);
         }
         return sb.ToString();
     }
@@ -332,15 +404,16 @@ public class Tests
     {
         internal static int s_genId = 0;
         internal int Id { get; init; } = Interlocked.Increment(ref s_genId);
-        internal Project Project { get; set; }
-        internal string Name { get; set; }
+        internal Project? Project { get; set; }
+        internal string? Name { get; set; }
         internal bool IsPackable { get; init; } = false;
         internal List<Node> Children { get; init; } = new();
         internal Node? Parent { get; init; } = null;
         internal string MagicWord { get; init; } = string.Empty;
-        internal string FullName { get; set; }
-        internal string Namespace { get; set; }
+        internal string? FullName { get; set; }
+        internal string? Namespace { get; set; }
         internal Type? Type { get; set; }
+        internal string Label => FullName ?? (Name is { } ? $"{(string.IsNullOrEmpty(Namespace) ? string.Empty : $"{Namespace}.")}{Name}" : string.Empty);
     }
 }
 
