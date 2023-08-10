@@ -10,7 +10,7 @@
     <Version>1.0.5</Version>
   </PropertyGroup>
   <Target Name="CopyPackage" AfterTargets="Pack">
-    <Move SourceFiles="$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg" DestinationFolder="W:\C#\nuget.local" />
+    <Move SourceFiles="$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg" DestinationFolder="$(ProjectDir)/../Starter" />
   </Target>
 
 </Project>

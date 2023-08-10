@@ -8,14 +8,18 @@ internal class Program
 {
     static void Main(string[] args)
     {
-        using Project1 server = new("Server")
+        string commonPackageName = Assembly.GetExecutingAssembly().GetCustomAttribute<MyAttribute>()!.CommonPackageName;
+        string commonPackageVersion = Assembly.GetExecutingAssembly().GetCustomAttribute<MyAttribute>()!.CommonPackageVersion;
+
+        using Project server = Project.Create(new ProjectOptions
         {
+            Name = "Server",
             Sdk = "Microsoft.NET.Sdk.Web",
-            IsVerbose = true,
-        };
-        server.TargetFramework += "-windows7.0";
-        server.AddPackage("Net.Leksi.RACWebApp.Common", "1.0.0", Path.GetDirectoryName(typeof(Program).Assembly.Location));
-        File.WriteAllText(Path.Combine(server.SourceDirectory, "Server.cs"), @"
+            TargetFramework = "net6.0-windows7.0",
+        });
+        server.IsVerbose = true;
+        server.AddPackage(commonPackageName, commonPackageVersion, Path.GetDirectoryName(typeof(Program).Assembly.Location));
+        File.WriteAllText(Path.Combine(server.SourceDirectory!, "Server.cs"), @"
 using Net.Leksi.RACWebApp.Common;
 
 public class Server: IServer
@@ -30,10 +34,12 @@ public class Server: IServer
 }
 "
         );
-        using Project1 config = new("Config")
+        using Project config = Project.Create(new ProjectOptions
         {
+            Name = "Config",
             Sdk = "Microsoft.NET.Sdk.Web",
-        };
+            TargetFramework = "net6.0-windows7.0",
+        });
         File.WriteAllText(Path.Combine(config.SourceDirectory, "Configure.cs"), @"
 using System.Reflection;
 
@@ -63,19 +69,9 @@ Hello World!
         config.AddContent("Hello.txt");
         server.AddProject(config);
 
-        server.DotnetEvent += (s, a) =>
-        {
-            if (!a.Success)
-            {
-                Console.WriteLine(a.Output);
-                Console.WriteLine(a.Error);
-            }
-        };
-        if (server.Compile())
-        {
-            IServer web = (Activator.CreateInstance(Assembly.LoadFile(server.LibraryFile!).GetType("Server")!) as IServer)!;
-            web.Run();
-        }
+        server.Compile();
+        IServer web = (Activator.CreateInstance(Assembly.LoadFile(server.LibraryFile!).GetType("Server")!) as IServer)!;
+        web.Run();
     }
 
 }

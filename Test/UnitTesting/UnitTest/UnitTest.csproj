@@ -28,6 +28,7 @@
     <AssemblyAttribute Include="Net.Leksi.Rac.UnitTesting.MyAttribute">
       <_Parameter1>$(CommonPackageName)</_Parameter1>
       <_Parameter2>$(CommonPackageVersion)</_Parameter2>
+      <_Parameter3>$(ProjectDir)</_Parameter3>
     </AssemblyAttribute>
   </ItemGroup>
 

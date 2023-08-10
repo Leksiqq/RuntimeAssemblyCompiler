@@ -1,4 +1,7 @@
 ﻿using System.Diagnostics;
+using System.IO;
+using System.Reflection;
+using System.Runtime.Loader;
 using System.Text;
 using System.Xml;
 using System.Xml.XPath;
@@ -7,8 +10,6 @@ namespace Net.Leksi.RuntimeAssemblyCompiler;
 
 public class Project : IDisposable
 {
-    public event DotnetEventHandler? DotnetEvent;
-
     private const string s_defaultSdk = "Microsoft.NET.Sdk";
 
     private static string? s_appDataDirectory;
@@ -18,8 +19,6 @@ public class Project : IDisposable
     private static Thread? s_cleanerThread = null;
     private static object s_lock = new();
 
-    private const string s_libraryOutputType = "Library";
-    private const string s_exeOutputType = "Exe";
     private const string s_true = "True";
     private const string s_false = "False";
     private const string s_outputDirName = "bin";
@@ -85,13 +84,12 @@ public class Project : IDisposable
     public string? SourceDirectory { get; private set; } = null;
     public string? OutputDirectory { get; private set; } = null;
     public string? TargetFramework { get; private set; } = null;
-    public bool IsExecutable { get; private set; } = false;
     public bool IsVerbose { get; set; } = false;
     public string Configuration { get; set; } = "Release";
     public Encoding LogEncoding { get; init; } = Encoding.UTF8;
     public string? LibraryFile { get; private set; } = null;
     public string? ExeFile { get; private set; } = null;
-    public string OutputType { get; private set; } = null!;
+    public OutputType OutputType { get; private set; } = OutputType.Library;
     public string ProjectFile { get; private set; } = null!;
     public bool GeneratePackage { get; private set; } = false;
     public bool IsTemporary { get; private set; } = false;
@@ -155,6 +153,14 @@ public class Project : IDisposable
             {
                 name = options.FullName;
             }
+            if (!string.IsNullOrEmpty(options.Name))
+            {
+                throw new ArgumentException($"{nameof(options)}.{nameof(options.Name)} cannot be set with {nameof(options)}.{nameof(options.FullName)}!");
+            }
+            if (!string.IsNullOrEmpty(options.Namespace))
+            {
+                throw new ArgumentException($"{nameof(options)}.{nameof(options.Namespace)} cannot be set with {nameof(options)}.{nameof(options.FullName)}!");
+            }
         }
         else
         {
@@ -183,8 +189,7 @@ public class Project : IDisposable
                 $"net{Environment.Version.Major}.{Environment.Version.Minor}",
             IsTemporary = options.SourceDirectory is null,
             SourceDirectory = options.SourceDirectory ?? GetTemporaryDirectory(),
-            IsExecutable = options.IsExecutable,
-            OutputType = options.IsExecutable ? s_exeOutputType : s_libraryOutputType,
+            OutputType = options.OutputType,
             GeneratePackage = options.GeneratePackage,
         };
         project.ProjectFile = Path.Combine(project.SourceDirectory, $"{project.Name}.csproj");
@@ -225,7 +230,7 @@ public class Project : IDisposable
     {
         if (_projects.Any(p => project == p.Project))
         {
-            throw new ArgumentException($"Project {project} is already added!");
+            throw new ArgumentException($"Project {project.FullName} is already added!");
         }
         _projects.Add(new ProjectHolder { Project = project });
     }
@@ -245,27 +250,41 @@ public class Project : IDisposable
         return File.Exists(result) ? result : null;
     }
 
-    public bool Compile()
+    public void Compile()
     {
         _allContents = new HashSet<string>();
 
-        if (!CreateProjectFile(this))
+        CreateProjectFile(this);
+
+        RunDotnet($"build \"{ProjectFile}\" --configuration {Configuration} --output \"{OutputDirectory}\" --use-current-runtime");
+
+        LibraryFile = Path.Combine(OutputDirectory!, $"{FullName}.dll");
+        if (OutputType is OutputType.Exe || OutputType is OutputType.WinExe)
         {
-            return false;
+            ExeFile = Path.Combine(OutputDirectory!, $"{FullName}.exe");
         }
-
-        bool success = RunDotnet($"build \"{ProjectFile}\" --configuration {Configuration} --output \"{OutputDirectory}\" --use-current-runtime");
-
-        if (success)
+        foreach (ProjectHolder ph in _projects)
         {
-            LibraryFile = Path.Combine(OutputDirectory!, $"{FullName}.dll");
-            if (IsExecutable)
+            string assemblyFile;
+            if (ph.Project is { })
             {
-                ExeFile = Path.Combine(OutputDirectory!, $"{FullName}.exe");
+                assemblyFile = $"{ph.Project.FullName}.dll";
             }
+            else
+            {
+                XmlDocument projectFile = new();
+                projectFile.Load(ph.Path!);
+                if (projectFile.CreateNavigator()?.SelectSingleNode("/Project/PropertyGroup/AssemblyName") is XPathNavigator element) 
+                {
+                    assemblyFile = $"{element.Value}.dll";
+                }
+                else
+                {
+                    assemblyFile = $"{Path.GetFileNameWithoutExtension(ph.Path)}.dll";
+                }
+            }
+            AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(OutputDirectory!, assemblyFile));
         }
-
-        return success;
     }
 
     public static void ClearTemporary(bool unconditional = false)
@@ -289,6 +308,10 @@ public class Project : IDisposable
         {
             File.WriteAllText(Path.Combine(SourceDirectory, s_disposedFile), string.Empty);
         }
+        else if(!IsTemporary && File.Exists(_lockFile))
+        {
+            File.Delete(_lockFile);
+        }
     }
 
     private Project() { }
@@ -304,7 +327,7 @@ public class Project : IDisposable
         return tempDirectory;
     }
 
-    private bool CreateProjectFile(Project root)
+    private void CreateProjectFile(Project root)
     {
         if (!File.Exists(_lockFile))
         {
@@ -338,16 +361,7 @@ public class Project : IDisposable
                     }
                     if (!File.Exists(Path.Combine(SourceDirectory!, path)))
                     {
-                        string message = $"File to add to output '{path}' not found!";
-                        if (IsVerbose)
-                        {
-                            Console.WriteLine(message);
-                        }
-                        else
-                        {
-                            DotnetEvent?.Invoke(this, new DotnetEventArgs(false, message, string.Empty, string.Empty));
-                        }
-                        return false;
+                        throw new InvalidOperationException($"File to add to output '{path}' not found!");
                     }
                     nav.AppendChild(@$"<Content Include=""{path}"">
     <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -371,10 +385,9 @@ public class Project : IDisposable
                             project.Project.Configuration = Configuration;
                             project.Project.IsVerbose = IsVerbose;
                         }
-                        if (!project.Project.CreateProjectFile(root))
-                        {
-                            return false;
-                        }
+
+                        project.Project.CreateProjectFile(root);
+
                         nav.AppendChild(@$"<ProjectReference Include=""{project.Project.ProjectFile}"" />");
                     }
                     else
@@ -393,7 +406,7 @@ public class Project : IDisposable
                 {
                     if (!string.IsNullOrEmpty(package.Source))
                     {
-                        if(sources is null)
+                        if (sources is null)
                         {
                             sources = new List<string>();
                         }
@@ -401,7 +414,7 @@ public class Project : IDisposable
                     }
                     nav.AppendChild(@$"<PackageReference Include=""{package.Name}"" Version=""{package.Version}"" />");
                 }
-                if(sources?.Any() ?? false)
+                if (sources?.Any() ?? false)
                 {
                     XmlDocument nugetConfig = new();
                     nugetConfig.LoadXml("<configuration><packageSources/></configuration>");
@@ -419,35 +432,17 @@ public class Project : IDisposable
             xml.WriteTo(xw);
             xw.Close();
 
-            //foreach (PackageHolder package in _packages)
-            //{
-            //    if (!RunDotnet($"add \"{ProjectFile}\" package {package.Name} --version {package.Version}{(!string.IsNullOrEmpty(package.Source) ? $" --source \"{package.Source}\"" : string.Empty)}"))
-            //    {
-            //        return false;
-            //    }
-            //}
             if (IsTemporary)
             {
-                string message = $"Temporary project {Name} was created at {SourceDirectory}.";
                 if (IsVerbose)
                 {
-                    Console.WriteLine(message);
-                }
-                else
-                {
-                    DotnetEvent?.Invoke(this, new DotnetEventArgs(true, message, string.Empty, string.Empty));
+                    Console.WriteLine($"Temporary project {Name} was created at {SourceDirectory}.");
                 }
             }
         }
-        return true;
     }
 
-    private void OnDotnetEvent(object? sender, DotnetEventArgs args)
-    {
-        DotnetEvent?.Invoke(sender, args);
-    }
-
-    private bool RunDotnet(string arguments)
+    private void RunDotnet(string arguments)
     {
         StringBuilder? sbError = null;
         string? output = null;
@@ -485,12 +480,10 @@ public class Project : IDisposable
         }
 
         bool success = dotnet.ExitCode == 0;
-        if (!IsVerbose)
+        if (dotnet.ExitCode != 0)
         {
-            DotnetEvent?.Invoke(this, new DotnetEventArgs(success, output!, sbError!.ToString(), arguments));
+            throw new InvalidOperationException($"Error running `dotnet {arguments}`:\n{output!}\n{sbError!.ToString()}");
         }
-
-        return success;
     }
 
 

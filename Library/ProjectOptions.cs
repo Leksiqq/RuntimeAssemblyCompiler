@@ -8,6 +8,6 @@ public class ProjectOptions
     public string? SourceDirectory { get; set; } = null;
     public string? Sdk { get; set; } = null;
     public string? TargetFramework { get; set; } = null;
-    public bool IsExecutable { get; set; } = false;
     public bool GeneratePackage { get; set; } = false;
+    public OutputType OutputType { get; set; }
 }

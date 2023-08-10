@@ -7,17 +7,26 @@
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RACWebApp.Starter</AssemblyName>
     <RootNamespace>Net.Leksi.RACWebApp.Starter</RootNamespace>
+    <CommonPackageName>Net.Leksi.RACWebApp.Common</CommonPackageName>
+    <CommonPackageVersion>1.0.5</CommonPackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Net.Leksi.RACWebApp.Common" Version="1.0.0" />
-    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="1.0.32" />
+    <PackageReference Include="$(CommonPackageName)" Version="$(CommonPackageVersion)" />
+    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="1.0.33" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Net.Leksi.RACWebApp.Common.1.0.0.nupkg">
+    <None Update="$(CommonPackageName).$(CommonPackageVersion).nupkg">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="Net.Leksi.Demo.RACWebApp.Starter.MyAttribute">
+      <_Parameter1>$(CommonPackageName)</_Parameter1>
+      <_Parameter2>$(CommonPackageVersion)</_Parameter2>
+    </AssemblyAttribute>
   </ItemGroup>
 
 </Project>

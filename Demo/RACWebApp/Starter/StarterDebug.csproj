@@ -1,23 +1,35 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net6.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RACWebApp.Starter</AssemblyName>
     <RootNamespace>Net.Leksi.RACWebApp.Starter</RootNamespace>
+    <CommonPackageName>Net.Leksi.RACWebApp.Common</CommonPackageName>
+    <CommonPackageVersion>1.0.5</CommonPackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\Library\RuntimeAssemblyCompilerDebug.csproj" />
-    <ProjectReference Include="..\Common\Common.csproj" />
+    <PackageReference Include="$(CommonPackageName)" Version="$(CommonPackageVersion)" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Net.Leksi.RACWebApp.Common.1.0.1.nupkg">
+    <None Update="$(CommonPackageName).$(CommonPackageVersion).nupkg">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="Net.Leksi.Demo.RACWebApp.Starter.MyAttribute">
+      <_Parameter1>$(CommonPackageName)</_Parameter1>
+      <_Parameter2>$(CommonPackageVersion)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Library\RuntimeAssemblyCompilerDebug.csproj" />
   </ItemGroup>
 
 </Project>

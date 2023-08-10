@@ -1,8 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.VisualStudio.TestPlatform.Utilities;
 using Net.Leksi.RACWebApp.Common;
 using Net.Leksi.RuntimeAssemblyCompiler;
 using System.Diagnostics;
+using System.IO;
 using System.Reflection;
 using System.Text;
 
@@ -10,11 +12,14 @@ namespace Net.Leksi.Rac.UnitTesting;
 
 public class Tests
 {
-    const int s_maxLevel = 4;
+    const int s_maxLevel = 2;
     const int s_numTreeChildren = 3;
     const int s_numOtherProperties = 3;
     const int s_isPackableBase = 1;
     const int s_maxObjectsOfType = 3;
+    const int s_maxChildren = 10;
+    const string s_external = "External";
+    const string s_permanent = "Permanent";
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
@@ -25,11 +30,14 @@ public class Tests
     }
 
     [Test]
-    [TestCase(1356655665)]
+    [TestCase(-1)]
     public void Test1(int seed)
     {
         DateTime start = DateTime.Now;
         Project.IsUnitTesting = true;
+
+        Assert.That(Project.IsUnitTesting, Is.True);
+
         if (seed == -1)
         {
             seed = (int)(long.Parse(
@@ -44,7 +52,91 @@ public class Tests
 
         string commonPackageName = Assembly.GetExecutingAssembly().GetCustomAttribute<MyAttribute>()!.CommonPackageName;
         string commonPackageVersion = Assembly.GetExecutingAssembly().GetCustomAttribute<MyAttribute>()!.CommonPackageVersion;
+        string projectDir = Assembly.GetExecutingAssembly().GetCustomAttribute<MyAttribute>()!.ProjectDir;
 
+        using Project permanentProject = Project.Create(new ProjectOptions
+        {
+            Name = s_permanent,
+            Namespace = GetType().Namespace!,
+            SourceDirectory = Path.Combine(projectDir, "..", s_permanent),
+        });
+
+        InvalidOperationException ex9 = Assert.Throws<InvalidOperationException>(() => Project.IsUnitTesting = false);
+        Assert.That(ex9.Message, Is.EqualTo("Cannot change IsUnitTesting!"));
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() => Project.Create(new ProjectOptions { FullName = ".FullName" }));
+        Assert.That(ex.Message, Is.EqualTo("options.FullName"));
+
+        ArgumentNullException ex1 = Assert.Throws<ArgumentNullException>(() => Project.Create(new ProjectOptions { Namespace = "qq" }));
+        Assert.That(ex1.Message, Is.EqualTo("Value cannot be null. (Parameter 'options.Name')"));
+
+        ArgumentException ex6 = Assert.Throws<ArgumentException>(() => Project.Create(new ProjectOptions { Namespace = "qq", FullName = "a.b" }));
+        Assert.That(ex6.Message, Is.EqualTo("options.Namespace cannot be set with options.FullName!"));
+
+        ArgumentException ex7 = Assert.Throws<ArgumentException>(() => Project.Create(new ProjectOptions { Name = "qq", FullName = "a.b" }));
+        Assert.That(ex7.Message, Is.EqualTo("options.Name cannot be set with options.FullName!"));
+
+        using (
+            Project proj1 = Project.Create(
+                new ProjectOptions 
+                { 
+                    FullName = "qq", 
+                    OutputType = OutputType.Exe,
+                    TargetFramework = "net6.0-windows",
+                }
+            )
+        )
+        {
+            Assert.Multiple(() =>
+            {
+                Assert.That(proj1.Name, Is.EqualTo("qq"));
+                Assert.That(proj1.FullName, Is.EqualTo("qq"));
+                Assert.That(proj1.Namespace, Is.Empty);
+            });
+            proj1.AddProject(permanentProject);
+            proj1.AddProject(Path.Combine(projectDir, "..", s_external, $"{s_external}.csproj"));
+            proj1.AddProject(Path.Combine(projectDir, "..", $"{s_external}1", $"{s_external}1.csproj"));
+            proj1.AddPackage(commonPackageName, commonPackageVersion, Path.GetDirectoryName(GetType().Assembly.Location));
+            File.WriteAllText(Path.Combine(proj1.SourceDirectory, "Program.cs"), $@"
+using {GetType().Namespace!};
+using Net.Leksi.RACWebApp.Common;
+
+Factory factory = new();
+factory.Value = ""Hell"";
+{s_permanent} val1 = new {s_permanent} {{ Value = factory.GetValue(typeof(string)).ToString() }};
+factory.Value = ""o wo"";
+{s_external} val2 = new {s_external} {{ Value = factory.GetValue(typeof(string)).ToString() }};
+factory.Value = ""rld!"";
+{s_external}1 val3 = new {s_external}1 {{ Value = factory.GetValue(typeof(string)).ToString() }};
+Console.Write($""{{val1.Value}}{{val2.Value}}{{val3.Value}}"");
+
+class Factory: IFactory
+{{
+    public string Value {{ get; set; }}
+    public object? GetValue(Type type)
+    {{
+        return Value;
+    }}
+}}
+"
+            );
+            proj1.Compile();
+            Process process = new();
+            process.StartInfo = new ProcessStartInfo
+            {
+                FileName = proj1.ExeFile,
+                RedirectStandardOutput = true,
+            };
+            process.Start();
+
+            string output = process.StandardOutput.ReadToEnd();
+
+            process.WaitForExit();
+            int res = process.ExitCode;
+
+            Assert.That(output, Is.EqualTo("Hello world!"));
+
+        }
         Action<Node, int> onNewNode = (node, level) =>
         {
             nodes.Add(node);
@@ -63,14 +155,20 @@ public class Tests
         {
             CreateClassSource(node, rnd);
             Assert.That(Directory.Exists(node.Project!.SourceDirectory), node.Project.SourceDirectory);
+            node.Project.AddProject(permanentProject);
+            ArgumentException ex2 = Assert.Throws<ArgumentException>(() => node.Project.AddProject(permanentProject));
+            Assert.That(ex2.Message, Is.EqualTo($"Project {permanentProject.FullName} is already added!"));
+            node.Project.AddProject(Path.Combine(projectDir, "..", s_external, $"{s_external}.csproj"));
+            ArgumentException ex3 = Assert.Throws<ArgumentException>(() => node.Project.AddProject(Path.Combine(projectDir, "..", s_external, $"{s_external}.csproj")));
+            Assert.That(ex3.Message, Is.EqualTo($"Project {Path.Combine(projectDir, "..", s_external, $"{s_external}.csproj")} is already added!"));
         }
 
         foreach (Node node in nodes.Where(n => n.IsPackable))
         {
             node.Project!.AddPackage(commonPackageName, commonPackageVersion, Path.GetDirectoryName(GetType().Assembly.Location));
-            node.Project!.DotnetEvent += ProjectDotnetEvent;
+            ArgumentException ex4 = Assert.Throws<ArgumentException>(() => node.Project!.AddPackage(commonPackageName, commonPackageVersion, Path.GetDirectoryName(GetType().Assembly.Location)));
+            Assert.That(ex4.Message, Is.EqualTo($"Package {commonPackageName} is already added!"));
             node.Project.Compile();
-            node.Project.DotnetEvent -= ProjectDotnetEvent;
         }
 
         Console.WriteLine($"{DateTime.Now - start}: Packages compiled");
@@ -83,17 +181,21 @@ public class Tests
                 if (child.Project!.GeneratePackage)
                 {
                     node.Project!.AddPackage(child.Project);
+                    ArgumentException ex5 = Assert.Throws<ArgumentException>(() => node.Project!.AddPackage(child.Project));
+                    Assert.That(ex5.Message, Is.EqualTo($"Package {child.Project.FullName} is already added!"));
                 }
                 else
                 {
                     node.Project!.AddProject(child.Project);
+                    ArgumentException ex5 = Assert.Throws<ArgumentException>(() => node.Project!.AddProject(child.Project));
+                    Assert.That(ex5.Message, Is.EqualTo($"Project {child.Project.FullName} is already added!"));
                 }
             }
         }
 
-        root.Project!.DotnetEvent += ProjectDotnetEvent;
-        root.Project.Compile();
-        root.Project.DotnetEvent -= ProjectDotnetEvent;
+        Assert.That(root.Project!.GetLibraryFile(permanentProject), Is.Null);
+
+        root.Project!.Compile();
 
         IHostBuilder hostBuilder = Host.CreateDefaultBuilder();
         hostBuilder.ConfigureServices(services => services.AddSingleton<IFactory, Factory>());
@@ -127,7 +229,12 @@ public class Tests
 
         WalkAssert(nodeObject, foundObjects, nodes, host);
 
-        foreach(Type? type in new Type[] {typeof(string)} .Concat(nodes.Select(n => n.Type)))
+        Assert.That(foundObjects.Where(e => $"{GetType().Namespace!}.{s_permanent}".Equals(e.Key.FullName)).Count(), Is.EqualTo(1));
+        Assert.That(foundObjects.Where(e => $"{GetType().Namespace!}.{s_permanent}".Equals(e.Key.FullName)).First().Value.Count(), Is.EqualTo(nodes.Count * s_maxObjectsOfType));
+        Assert.That(foundObjects.Where(e => $"{GetType().Namespace!}.{s_external}".Equals(e.Key.FullName)).Count(), Is.EqualTo(1));
+        Assert.That(foundObjects.Where(e => $"{GetType().Namespace!}.{s_external}".Equals(e.Key.FullName)).First().Value.Count(), Is.EqualTo(nodes.Count * s_maxObjectsOfType));
+
+        foreach (Type? type in new Type[] {typeof(string)} .Concat(nodes.Select(n => n.Type)))
         {
             Assert.That(type, Is.Not.Null);
             Assert.That(foundObjects.ContainsKey(type), Is.True, type.ToString());
@@ -135,6 +242,11 @@ public class Tests
         }
 
         nodes.ForEach(n => n.Project!.Dispose());
+
+        nodes.Clear();
+        root = null;
+
+        GC.Collect();
     }
 
     private void WalkAssert(object? obj, Dictionary<Type, HashSet<object>> foundObjects, List<Node> nodes, IHost host)
@@ -150,6 +262,8 @@ public class Tests
             if (obj is IMagicable mgc)
             {
                 mgc.SameTypeProperty = host.Services.GetRequiredService<IFactory>().GetValue(obj.GetType())!;
+
+                Assert.That(mgc.SameTypeProperty, Is.EqualTo(obj.GetType().GetProperty("Prop0")!.GetValue(obj)));
                 Node? node = nodes.Where(n => n.Type == obj.GetType()).FirstOrDefault();
 
                 Assert.That(node, Is.Not.Null);
@@ -191,13 +305,14 @@ public class Tests
                 }
                 else
                 {
-                    nodesToFindAliens[i].Children.Add(aliens[0]);
-                    if (!indirectDependents.ContainsKey(aliens[0]))
+                    int pos = rnd.Next(aliens.Count);
+                    nodesToFindAliens[i].Children.Add(aliens[pos]);
+                    if (!indirectDependents.ContainsKey(aliens[pos]))
                     {
-                        indirectDependents.Add(aliens[0], new List<Node>());
+                        indirectDependents.Add(aliens[pos], new List<Node>());
                     }
-                    indirectDependents[aliens[0]].Add(nodesToFindAliens[i]);
-                    if (aliens.Count == 1)
+                    indirectDependents[aliens[pos]].Add(nodesToFindAliens[i]);
+                    if (aliens.Count == 1 || nodesToFindAliens[i].Children.Count >= s_maxChildren)
                     {
                         nodesToFindAliens.RemoveAt(i);
                     }
@@ -216,82 +331,7 @@ public class Tests
         }
     }
 
-    private static void ExtendDependencyTreeToGraph1(List<Node> nodes, Random rnd)
-    {
-        List<int>[] g = new List<int>[nodes.Count + 1];
-        for (int i = 1; i < g.Length; ++i)
-        {
-            g[i] = new List<int>();
-        }
-        int[] cl = new int[nodes.Count + 1];
-
-        foreach (Node node in nodes)
-        {
-            if (node.Parent is { })
-            {
-                g[node.Id]!.Add(node.Parent.Id);
-            }
-        }
-
-        bool changed = true;
-        while (changed)
-        {
-            changed = false;
-            foreach (Node to in nodes.Where(n => !n.IsPackable))
-            {
-                foreach (Node from in nodes.Where(n =>
-                    n != to
-                    && !to.Children.Contains(n)
-                    && !n.Children.Contains(to)
-                ))
-                {
-                    g[from.Id]!.Add(to.Id);
-                    Array.Fill(cl, 0);
-                    cl[from.Id] = 1;
-                    if (!Dfs(to.Id, g, cl))
-                    {
-                        to.Children.Add(from);
-                        changed = true;
-                        break;
-                    }
-                    g[from.Id]!.RemoveAt(g[from.Id]!.Count - 1);
-                }
-            }
-        }
-
-    }
-
-    private static bool Dfs(int from, List<int>[] g, int[] cl)
-    {
-        bool result = false;
-        cl[from] = 1;
-        foreach (int to in g[from]!)
-        {
-            if (
-                cl[to] == 1
-                || (
-                    cl[to] == 0
-                    && Dfs(to, g, cl)
-                )
-            )
-            {
-                result = true;
-                break;
-            }
-        }
-        cl[from] = 2;
-        return result;
-    }
-
-    private static void ProjectDotnetEvent(object? sender, DotnetEventArgs args)
-    {
-        if (!args.Success)
-        {
-            Assert.Fail($"dotnet: {args.Arguments}\n{args.Output}\n{args.Error}");
-        }
-    }
-
-    private static void CreateClassSource(Node node, Random rnd)
+    private void CreateClassSource(Node node, Random rnd)
     {
         if (node.Project is null)
         {
@@ -299,6 +339,7 @@ public class Tests
             {
                 GeneratePackage = node.IsPackable,
                 TargetFramework = "net6.0-windows",
+                OutputType = OutputType.Library,
             };
             if (!string.IsNullOrEmpty(node.FullName))
             {
@@ -313,8 +354,13 @@ public class Tests
                 }
             }
             node.Project = Project.Create(po);
+
             File.WriteAllText(Path.Combine(node.Project.SourceDirectory!, $"{node.Project.FullName}.magic.txt"), node.MagicWord);
             node.Project.AddContent($"{node.Project.FullName}.magic.txt");
+
+            ArgumentException? ex7 = Assert.Throws<ArgumentException>(() => node.Project.AddContent($"{node.Project.FullName}.magic.txt"));
+            Assert.That(ex7.Message, Is.EqualTo($"Content {node.Project.FullName}.magic.txt is already added!"));
+
             FileStream fileStream = File.Create(Path.Combine(node.Project.SourceDirectory!, $"{node.Project.Name}.cs"));
             StreamWriter sw = new(fileStream);
             sw.WriteLine("using System.Reflection;");
@@ -329,6 +375,10 @@ public class Tests
                 sw.WriteLine($"    public {child.Project!.FullName} Prop{i} {{ get; set; }}");
                 ++i;
             }
+            sw.WriteLine($"    public {GetType().Namespace!}.{s_permanent} Prop{i} {{ get; set; }}");
+            ++i;
+            sw.WriteLine($"    public {GetType().Namespace!}.{s_external} Prop{i} {{ get; set; }}");
+            ++i;
             for (int j = 0; j < s_numOtherProperties; ++j)
             {
                 sw.WriteLine($"    public string Prop{i} {{ get; set; }}");
@@ -351,6 +401,10 @@ public class Tests
                 sw.WriteLine($"        Prop{i} = ({child.Project!.FullName})factory.GetValue(typeof({child.Project!.FullName}));");
                 ++i;
             }
+            sw.WriteLine($"        Prop{i} = new {GetType().Namespace!}.{s_permanent} {{ Value = (string)factory.GetValue(typeof({GetType().Namespace!}.{s_permanent})) }};");
+            ++i;
+            sw.WriteLine($"        Prop{i} = new {GetType().Namespace!}.{s_external} {{ Value = (string)factory.GetValue(typeof({GetType().Namespace!}.{s_external})) }};");
+            ++i;
             for (int j = 0; j < s_numOtherProperties; ++j)
             {
                 sw.WriteLine($"        Prop{i} = (string)factory.GetValue(typeof(string));");
