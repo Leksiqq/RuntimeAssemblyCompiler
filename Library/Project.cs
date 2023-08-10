@@ -291,7 +291,7 @@ public class Project : IDisposable
         }
     }
 
-    public static void ClearTemporary(bool unconditional = false)
+    private static void ClearTemporary(bool unconditional = false)
     {
         foreach (string path in Directory.GetDirectories(s_appDataDirectory!))
         {

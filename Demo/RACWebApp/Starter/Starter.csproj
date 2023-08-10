@@ -13,7 +13,7 @@
 
   <ItemGroup>
     <PackageReference Include="$(CommonPackageName)" Version="$(CommonPackageVersion)" />
-    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="1.0.33" />
+    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="1.0.34" />
   </ItemGroup>
 
   <ItemGroup>
