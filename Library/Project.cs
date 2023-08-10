@@ -1,6 +1,4 @@
 ﻿using System.Diagnostics;
-using System.IO;
-using System.Reflection;
 using System.Runtime.Loader;
 using System.Text;
 using System.Xml;
@@ -250,6 +248,23 @@ public class Project : IDisposable
         return File.Exists(result) ? result : null;
     }
 
+    public string? GetLibraryFile(string path)
+    {
+        string assemblyFile;
+        XmlDocument projectFile = new();
+        projectFile.Load(path);
+        if (projectFile.CreateNavigator()?.SelectSingleNode("/Project/PropertyGroup/AssemblyName") is XPathNavigator element)
+        {
+            assemblyFile = element.Value;
+        }
+        else
+        {
+            assemblyFile = Path.GetFileNameWithoutExtension(path);
+        }
+        string result = Path.Combine(OutputDirectory!, $"{assemblyFile}.dll");
+        return File.Exists(result) ? result : null;
+    }
+
     public void Compile()
     {
         _allContents = new HashSet<string>();
@@ -265,25 +280,14 @@ public class Project : IDisposable
         }
         foreach (ProjectHolder ph in _projects)
         {
-            string assemblyFile;
             if (ph.Project is { })
             {
-                assemblyFile = $"{ph.Project.FullName}.dll";
+                AssemblyLoadContext.Default.LoadFromAssemblyPath(GetLibraryFile(ph.Project));
             }
             else
             {
-                XmlDocument projectFile = new();
-                projectFile.Load(ph.Path!);
-                if (projectFile.CreateNavigator()?.SelectSingleNode("/Project/PropertyGroup/AssemblyName") is XPathNavigator element) 
-                {
-                    assemblyFile = $"{element.Value}.dll";
-                }
-                else
-                {
-                    assemblyFile = $"{Path.GetFileNameWithoutExtension(ph.Path)}.dll";
-                }
+                AssemblyLoadContext.Default.LoadFromAssemblyPath(GetLibraryFile(ph.Path));
             }
-            AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(OutputDirectory!, assemblyFile));
         }
     }
 
