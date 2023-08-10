@@ -5,14 +5,12 @@ using Net.Leksi.RuntimeAssemblyCompiler;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace Net.Leksi.Rac.UnitTesting;
 
 public class Tests
 {
-    const int s_maxLevel = 1;
+    const int s_maxLevel = 4;
     const int s_numTreeChildren = 3;
     const int s_numOtherProperties = 3;
     const int s_isPackableBase = 1;
@@ -44,7 +42,8 @@ public class Tests
         Random rnd = new Random(seed);
         List<Node> nodes = new();
 
-        string commonVersion = Assembly.GetExecutingAssembly().GetCustomAttribute<MyAttribute>()!.Version;
+        string commonPackageName = Assembly.GetExecutingAssembly().GetCustomAttribute<MyAttribute>()!.CommonPackageName;
+        string commonPackageVersion = Assembly.GetExecutingAssembly().GetCustomAttribute<MyAttribute>()!.CommonPackageVersion;
 
         Action<Node, int> onNewNode = (node, level) =>
         {
@@ -68,7 +67,7 @@ public class Tests
 
         foreach (Node node in nodes.Where(n => n.IsPackable))
         {
-            node.Project!.AddPackage("Net.Leksi.RACWebApp.Common", commonVersion, Path.GetDirectoryName(GetType().Assembly.Location));
+            node.Project!.AddPackage(commonPackageName, commonPackageVersion, Path.GetDirectoryName(GetType().Assembly.Location));
             node.Project!.DotnetEvent += ProjectDotnetEvent;
             node.Project.Compile();
             node.Project.DotnetEvent -= ProjectDotnetEvent;
@@ -78,7 +77,7 @@ public class Tests
 
         foreach (Node node in nodes.Where(n => !n.IsPackable))
         {
-            node.Project!.AddPackage("Net.Leksi.RACWebApp.Common", commonVersion, Path.GetDirectoryName(GetType().Assembly.Location));
+            node.Project!.AddPackage(commonPackageName, commonPackageVersion, Path.GetDirectoryName(GetType().Assembly.Location));
             foreach (Node child in node.Children.Where(n => n != node))
             {
                 if (child.Project!.GeneratePackage)
@@ -122,11 +121,18 @@ public class Tests
         (host.Services.GetRequiredService<IFactory>() as Factory)!.MaxObjectsOfType = s_maxObjectsOfType;
         (host.Services.GetRequiredService<IFactory>() as Factory)!.Random = rnd;
 
-        object nodeObject = host.Services.GetRequiredService(root.Type!);
+        object nodeObject = host.Services.GetRequiredService<IFactory>().GetValue(root.Type!)!;
 
         Dictionary<Type, HashSet<object>> foundObjects = new();
 
-        WalkAssert(root, foundObjects, nodes, host);
+        WalkAssert(nodeObject, foundObjects, nodes, host);
+
+        foreach(Type? type in new Type[] {typeof(string)} .Concat(nodes.Select(n => n.Type)))
+        {
+            Assert.That(type, Is.Not.Null);
+            Assert.That(foundObjects.ContainsKey(type), Is.True, type.ToString());
+            Assert.That(foundObjects[type].Count, Is.EqualTo(s_maxObjectsOfType));
+        }
 
         nodes.ForEach(n => n.Project!.Dispose());
     }
@@ -143,14 +149,14 @@ public class Tests
         {
             if (obj is IMagicable mgc)
             {
-                mgc.SameTypeProperty = host.Services.GetRequiredService(obj.GetType());
+                mgc.SameTypeProperty = host.Services.GetRequiredService<IFactory>().GetValue(obj.GetType())!;
                 Node? node = nodes.Where(n => n.Type == obj.GetType()).FirstOrDefault();
 
                 Assert.That(node, Is.Not.Null);
 
                 Assert.That(mgc.Magic, Is.EqualTo(node.MagicWord));
 
-                foreach(PropertyInfo pi in obj.GetType().GetProperties())
+                foreach(PropertyInfo pi in obj.GetType().GetProperties().Where(p => !"Magic".Equals(p.Name)))
                 {
                     WalkAssert(pi.GetValue(obj), foundObjects, nodes, host);
                 }
