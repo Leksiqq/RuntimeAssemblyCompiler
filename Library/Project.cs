@@ -84,8 +84,8 @@ public class Project : IDisposable
     public string ProjectDir { get; private set; } = null!;
     public string TargetFramework { get; private set; } = null!;
     public bool IsVerbose { get; set; } = false;
+    public Encoding LogEncoding { get; set; } = Encoding.UTF8;
     public string Configuration { get; set; } = "Release";
-    public Encoding LogEncoding { get; init; } = Encoding.UTF8;
     public string? LibraryFile { get; private set; } = null;
     public string? ExeFile { get; private set; } = null;
     public OutputType OutputType { get; private set; } = OutputType.Library;
@@ -388,6 +388,7 @@ public class Project : IDisposable
                             project.Project.TargetFramework = TargetFramework;
                             project.Project.Configuration = Configuration;
                             project.Project.IsVerbose = IsVerbose;
+                            project.Project.LogEncoding = LogEncoding;
                         }
 
                         project.Project.CreateProjectFile(root);

@@ -12,7 +12,7 @@ namespace Net.Leksi.Rac.UnitTesting;
 
 public class Tests
 {
-    const int s_maxLevel = 2;
+    const int s_maxLevel = 4;
     const int s_numTreeChildren = 3;
     const int s_numOtherProperties = 3;
     const int s_isPackableBase = 1;
