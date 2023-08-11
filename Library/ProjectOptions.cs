@@ -5,9 +5,9 @@ public class ProjectOptions
     public string Name { get; set; } = null!;
     public string Namespace { get; set; } = null!;
     public string FullName { get; set; } = null!;
-    public string? SourceDirectory { get; set; } = null;
     public string? Sdk { get; set; } = null;
     public string? TargetFramework { get; set; } = null;
-    public bool GeneratePackage { get; set; } = false;
+    public string? ProjectDir { get; set; } = null;
     public OutputType OutputType { get; set; }
+    public bool GeneratePackage { get; set; } = false;
 }

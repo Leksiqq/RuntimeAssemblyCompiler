@@ -19,7 +19,7 @@ internal class Program
         });
         server.IsVerbose = true;
         server.AddPackage(commonPackageName, commonPackageVersion, Path.GetDirectoryName(typeof(Program).Assembly.Location));
-        File.WriteAllText(Path.Combine(server.SourceDirectory!, "Server.cs"), @"
+        File.WriteAllText(Path.Combine(server.ProjectDir!, "Server.cs"), @"
 using Net.Leksi.RACWebApp.Common;
 
 public class Server: IServer
@@ -40,7 +40,7 @@ public class Server: IServer
             Sdk = "Microsoft.NET.Sdk.Web",
             TargetFramework = "net6.0-windows7.0",
         });
-        File.WriteAllText(Path.Combine(config.SourceDirectory, "Configure.cs"), @"
+        File.WriteAllText(Path.Combine(config.ProjectDir, "Configure.cs"), @"
 using System.Reflection;
 
 public static class Configure
@@ -63,7 +63,7 @@ public static class Configure
 
 }
 ");
-        File.WriteAllText(Path.Combine(config.SourceDirectory, "Hello.txt"), @"
+        File.WriteAllText(Path.Combine(config.ProjectDir!, "Hello.txt"), @"
 Hello World!
 ");
         config.AddContent("Hello.txt");

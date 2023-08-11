@@ -29,6 +29,8 @@ public class Project : IDisposable
     private HashSet<string>? _allContents = null;
 
     private string _lockFile = string.Empty;
+    private string _projectFile = null!;
+    private string _outDir = null!;
 
     public static bool IsUnitTesting
     {
@@ -79,16 +81,14 @@ public class Project : IDisposable
     public string Namespace { get; private set; } = null!;
     public string FullName { get; private set; } = null!;
     public string Sdk { get; private set; } = null!;
-    public string? SourceDirectory { get; private set; } = null;
-    public string? OutputDirectory { get; private set; } = null;
-    public string? TargetFramework { get; private set; } = null;
+    public string ProjectDir { get; private set; } = null!;
+    public string TargetFramework { get; private set; } = null!;
     public bool IsVerbose { get; set; } = false;
     public string Configuration { get; set; } = "Release";
     public Encoding LogEncoding { get; init; } = Encoding.UTF8;
     public string? LibraryFile { get; private set; } = null;
     public string? ExeFile { get; private set; } = null;
     public OutputType OutputType { get; private set; } = OutputType.Library;
-    public string ProjectFile { get; private set; } = null!;
     public bool GeneratePackage { get; private set; } = false;
     public bool IsTemporary { get; private set; } = false;
 
@@ -185,14 +185,14 @@ public class Project : IDisposable
             Sdk = options.Sdk ?? s_defaultSdk,
             TargetFramework = options.TargetFramework ??
                 $"net{Environment.Version.Major}.{Environment.Version.Minor}",
-            IsTemporary = options.SourceDirectory is null,
-            SourceDirectory = options.SourceDirectory ?? GetTemporaryDirectory(),
+            IsTemporary = options.ProjectDir is null,
+            ProjectDir = options.ProjectDir ?? GetTemporaryDirectory(),
             OutputType = options.OutputType,
             GeneratePackage = options.GeneratePackage,
         };
-        project.ProjectFile = Path.Combine(project.SourceDirectory, $"{project.Name}.csproj");
-        project.OutputDirectory = Path.Combine(project.SourceDirectory, s_outputDirName);
-        project._lockFile = Path.Combine(project.SourceDirectory, ".lock");
+        project._projectFile = Path.Combine(project.ProjectDir, $"{project.Name}.csproj");
+        project._outDir = Path.Combine(project.ProjectDir, s_outputDirName);
+        project._lockFile = Path.Combine(project.ProjectDir, ".lock");
         return project;
     }
 
@@ -212,7 +212,7 @@ public class Project : IDisposable
 
     public void AddPackage(Project project)
     {
-        AddPackage(project.FullName, s_version, project.OutputDirectory);
+        AddPackage(project.FullName, s_version, project._outDir);
     }
 
     public void AddProject(string path)
@@ -244,7 +244,7 @@ public class Project : IDisposable
 
     public string? GetLibraryFile(Project project)
     {
-        string result = Path.Combine(OutputDirectory!, $"{project.FullName}.dll");
+        string result = Path.Combine(_outDir!, $"{project.FullName}.dll");
         return File.Exists(result) ? result : null;
     }
 
@@ -261,7 +261,7 @@ public class Project : IDisposable
         {
             assemblyFile = Path.GetFileNameWithoutExtension(path);
         }
-        string result = Path.Combine(OutputDirectory!, $"{assemblyFile}.dll");
+        string result = Path.Combine(_outDir!, $"{assemblyFile}.dll");
         return File.Exists(result) ? result : null;
     }
 
@@ -271,22 +271,22 @@ public class Project : IDisposable
 
         CreateProjectFile(this);
 
-        RunDotnet($"build \"{ProjectFile}\" --configuration {Configuration} --output \"{OutputDirectory}\" --use-current-runtime");
+        RunDotnet($"build \"{_projectFile}\" --configuration {Configuration} --output \"{_outDir}\" --use-current-runtime");
 
-        LibraryFile = Path.Combine(OutputDirectory!, $"{FullName}.dll");
+        LibraryFile = Path.Combine(_outDir!, $"{FullName}.dll");
         if (OutputType is OutputType.Exe || OutputType is OutputType.WinExe)
         {
-            ExeFile = Path.Combine(OutputDirectory!, $"{FullName}.exe");
+            ExeFile = Path.Combine(_outDir!, $"{FullName}.exe");
         }
         foreach (ProjectHolder ph in _projects)
         {
             if (ph.Project is { })
             {
-                AssemblyLoadContext.Default.LoadFromAssemblyPath(GetLibraryFile(ph.Project));
+                AssemblyLoadContext.Default.LoadFromAssemblyPath(GetLibraryFile(ph.Project)!);
             }
             else
             {
-                AssemblyLoadContext.Default.LoadFromAssemblyPath(GetLibraryFile(ph.Path));
+                AssemblyLoadContext.Default.LoadFromAssemblyPath(GetLibraryFile(ph.Path!)!);
             }
         }
     }
@@ -308,9 +308,9 @@ public class Project : IDisposable
 
     public void Dispose()
     {
-        if (IsTemporary && Directory.Exists(SourceDirectory))
+        if (IsTemporary && Directory.Exists(ProjectDir))
         {
-            File.WriteAllText(Path.Combine(SourceDirectory, s_disposedFile), string.Empty);
+            File.WriteAllText(Path.Combine(ProjectDir, s_disposedFile), string.Empty);
         }
         else if(!IsTemporary && File.Exists(_lockFile))
         {
@@ -363,7 +363,7 @@ public class Project : IDisposable
                     {
                         throw new InvalidOperationException($"Content '{path}' is duplicated!");
                     }
-                    if (!File.Exists(Path.Combine(SourceDirectory!, path)))
+                    if (!File.Exists(Path.Combine(ProjectDir!, path)))
                     {
                         throw new InvalidOperationException($"File to add to output '{path}' not found!");
                     }
@@ -392,7 +392,7 @@ public class Project : IDisposable
 
                         project.Project.CreateProjectFile(root);
 
-                        nav.AppendChild(@$"<ProjectReference Include=""{project.Project.ProjectFile}"" />");
+                        nav.AppendChild(@$"<ProjectReference Include=""{project.Project._projectFile}"" />");
                     }
                     else
                     {
@@ -427,12 +427,12 @@ public class Project : IDisposable
                     {
                         navNugetConfig.AppendChild($"<add key=\"key_{i}\" value=\"{sources[i]}\"/>");
                     }
-                    XmlWriter xw1 = XmlWriter.Create(Path.Combine(SourceDirectory!, "NuGet.Config"), xws);
+                    XmlWriter xw1 = XmlWriter.Create(Path.Combine(ProjectDir!, "NuGet.Config"), xws);
                     nugetConfig.WriteTo(xw1);
                     xw1.Close();
                 }
             }
-            XmlWriter xw = XmlWriter.Create(ProjectFile, xws);
+            XmlWriter xw = XmlWriter.Create(_projectFile, xws);
             xml.WriteTo(xw);
             xw.Close();
 
@@ -440,7 +440,7 @@ public class Project : IDisposable
             {
                 if (IsVerbose)
                 {
-                    Console.WriteLine($"Temporary project {Name} was created at {SourceDirectory}.");
+                    Console.WriteLine($"Temporary project {Name} was created at {ProjectDir}.");
                 }
             }
         }

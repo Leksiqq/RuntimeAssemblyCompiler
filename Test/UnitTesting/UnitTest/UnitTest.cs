@@ -58,7 +58,7 @@ public class Tests
         {
             Name = s_permanent,
             Namespace = GetType().Namespace!,
-            SourceDirectory = Path.Combine(projectDir, "..", s_permanent),
+            ProjectDir = Path.Combine(projectDir, "..", s_permanent),
         });
 
         InvalidOperationException ex9 = Assert.Throws<InvalidOperationException>(() => Project.IsUnitTesting = false);
@@ -97,7 +97,7 @@ public class Tests
             proj1.AddProject(Path.Combine(projectDir, "..", s_external, $"{s_external}.csproj"));
             proj1.AddProject(Path.Combine(projectDir, "..", $"{s_external}1", $"{s_external}1.csproj"));
             proj1.AddPackage(commonPackageName, commonPackageVersion, Path.GetDirectoryName(GetType().Assembly.Location));
-            File.WriteAllText(Path.Combine(proj1.SourceDirectory, "Program.cs"), $@"
+            File.WriteAllText(Path.Combine(proj1.ProjectDir!, "Program.cs"), $@"
 using {GetType().Namespace!};
 using Net.Leksi.RACWebApp.Common;
 
@@ -154,7 +154,7 @@ class Factory: IFactory
         foreach (Node node in nodes)
         {
             CreateClassSource(node, rnd);
-            Assert.That(Directory.Exists(node.Project!.SourceDirectory), node.Project.SourceDirectory);
+            Assert.That(Directory.Exists(node.Project!.ProjectDir), node.Project.ProjectDir);
             node.Project.AddProject(permanentProject);
             ArgumentException ex2 = Assert.Throws<ArgumentException>(() => node.Project.AddProject(permanentProject));
             Assert.That(ex2.Message, Is.EqualTo($"Project {permanentProject.FullName} is already added!"));
@@ -243,10 +243,6 @@ class Factory: IFactory
 
         nodes.ForEach(n => n.Project!.Dispose());
 
-        nodes.Clear();
-        root = null;
-
-        GC.Collect();
     }
 
     private void WalkAssert(object? obj, Dictionary<Type, HashSet<object>> foundObjects, List<Node> nodes, IHost host)
@@ -355,13 +351,13 @@ class Factory: IFactory
             }
             node.Project = Project.Create(po);
 
-            File.WriteAllText(Path.Combine(node.Project.SourceDirectory!, $"{node.Project.FullName}.magic.txt"), node.MagicWord);
+            File.WriteAllText(Path.Combine(node.Project.ProjectDir!, $"{node.Project.FullName}.magic.txt"), node.MagicWord);
             node.Project.AddContent($"{node.Project.FullName}.magic.txt");
 
             ArgumentException? ex7 = Assert.Throws<ArgumentException>(() => node.Project.AddContent($"{node.Project.FullName}.magic.txt"));
             Assert.That(ex7.Message, Is.EqualTo($"Content {node.Project.FullName}.magic.txt is already added!"));
 
-            FileStream fileStream = File.Create(Path.Combine(node.Project.SourceDirectory!, $"{node.Project.Name}.cs"));
+            FileStream fileStream = File.Create(Path.Combine(node.Project.ProjectDir!, $"{node.Project.Name}.cs"));
             StreamWriter sw = new(fileStream);
             sw.WriteLine("using System.Reflection;");
             sw.WriteLine("using Net.Leksi.RACWebApp.Common;");
