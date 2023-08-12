@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net6.0-windows</TargetFramework>
@@ -6,10 +6,13 @@
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RACWebApp.UnitTesting.Common</AssemblyName>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
   </PropertyGroup>
 
   <Target Name="CopyPackage" AfterTargets="Pack">
+    <Exec Command="del $(PackageId).*.nupkg" WorkingDirectory="$(ProjectDir)/../UnitTest"/>
+    <Exec Command="del CommonVersion.txt" WorkingDirectory="$(ProjectDir)/../UnitTest"/>
+    <WriteLinesToFile Lines="$(Version)" File="$(ProjectDir)/../UnitTest/CommonVersion.txt"/>
     <Move SourceFiles="$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg" DestinationFolder="$(ProjectDir)/../UnitTest" />
   </Target>
 

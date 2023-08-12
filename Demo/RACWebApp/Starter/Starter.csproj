@@ -16,6 +16,7 @@
   </ItemGroup>
 
   <Target Name="BuildCommon" BeforeTargets="PreBuild">
+    <Message Text="$(Configuration)" />
     <MSBuild Projects="$(ProjectDir)\..\Common\Common.csproj" Properties="Configuration=$(Configuration);Platform=$(Platform)" />
   </Target>
   

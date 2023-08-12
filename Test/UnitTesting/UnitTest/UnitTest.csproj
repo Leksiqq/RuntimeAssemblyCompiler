@@ -11,9 +11,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="7.0.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.1.0" />
-    <PackageReference Include="$(CommonPackageName)">
-      <Version>$(CommonPackageVersion)</Version>
-    </PackageReference>
+    <PackageReference Include="Net.Leksi.RACWebApp.UnitTesting.Common" Version="1.0.1" />
     <PackageReference Include="NUnit" Version="3.13.3" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.2.1" />
     <PackageReference Include="NUnit.Analyzers" Version="3.3.0" />
@@ -21,21 +19,31 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="$(CommonPackageName).$(CommonPackageVersion).nupkg">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-  <ItemGroup>
-    <AssemblyAttribute Include="Net.Leksi.Rac.UnitTesting.MyAttribute">
-      <_Parameter1>$(CommonPackageName)</_Parameter1>
-      <_Parameter2>$(CommonPackageVersion)</_Parameter2>
-      <_Parameter3>$(ProjectDir)</_Parameter3>
-    </AssemblyAttribute>
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\..\..\Library\RuntimeAssemblyCompilerDebug.csproj" />
   </ItemGroup>
 
+  <Target Name="BuildCommon" BeforeTargets="PreBuild">
+    <MSBuild Projects="$(ProjectDir)\..\Common\Common.csproj" Properties="Configuration=$(Configuration);Platform=$(Platform)" />
+  </Target>
+
+  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
+    <ReadLinesFromFile File=".\CommonVersion.txt">
+      <Output TaskParameter="Lines" PropertyName="CommonPackageVersion" />
+    </ReadLinesFromFile>
+    <Exec Command="dotnet remove $(ProjectPath) package $(CommonPackageName)" IgnoreExitCode="True" />
+    <Exec Command="dotnet add $(ProjectPath) package $(CommonPackageName) --version $(CommonPackageVersion) --source $(ProjectDir)" />
+
+    <ItemGroup>
+      <AssemblyAttribute Include="Net.Leksi.Rac.UnitTesting.MyAttribute">
+        <_Parameter1>$(CommonPackageName)</_Parameter1>
+        <_Parameter2>$(CommonPackageVersion)</_Parameter2>
+        <_Parameter3>$(ProjectDir)</_Parameter3>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="del $(TargetDir)$(CommonPackageName).*.nupkg" />
+    <Exec Command="copy $(CommonPackageName).$(CommonPackageVersion).nupkg $(TargetDir)" />
+  </Target>
 </Project>
