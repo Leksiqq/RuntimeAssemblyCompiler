@@ -7,9 +7,12 @@
     <AssemblyName>Net.Leksi.RACWebApp.Common</AssemblyName>
     <RootNamespace>Net.Leksi.RACWebApp.Common</RootNamespace>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-    <Version>1.0.5</Version>
+    <Version>1.0.17</Version>
   </PropertyGroup>
   <Target Name="CopyPackage" AfterTargets="Pack">
+    <Exec Command="del $(PackageId).*.nupkg" WorkingDirectory="$(ProjectDir)/../Starter"/>
+    <Exec Command="del CommonVersion.txt" WorkingDirectory="$(ProjectDir)/../Starter"/>
+    <WriteLinesToFile Lines="$(Version)" File="$(ProjectDir)/../Starter/CommonVersion.txt"/>
     <Move SourceFiles="$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg" DestinationFolder="$(ProjectDir)/../Starter" />
   </Target>
 

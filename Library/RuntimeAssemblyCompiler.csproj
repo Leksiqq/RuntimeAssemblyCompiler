@@ -7,10 +7,25 @@
     <AssemblyName>Net.Leksi.RuntimeAssemblyCompiler</AssemblyName>
     <RootNamespace>Net.Leksi.RuntimeAssemblyCompiler</RootNamespace>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-    <Version>1.0.34</Version>
+    <Version>1.0.35</Version>
+    <Authors>leksiq</Authors>
+    <Title>Runtime Assembly Compiler</Title>
+    <Description>Библиотека Net.Leksi.RuntimeAssemblyCompiler позволяет компилировать и загружать сборки во время работы приложения.
+The Net.Leksi.RuntimeAssemblyCompiler library allows you to compile and load assemblies while your application is running.</Description>
+    <Copyright>Алексей Юрьевич Захаров &lt;leksi@leksi.net&gt;, 2023</Copyright>
+    <PackageProjectUrl>https://github.com/Leksiqq/RuntimeAssemblyCompiler/wiki</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Leksiqq/RuntimeAssemblyCompiler</RepositoryUrl>
+    <PackageTags>runtime-compiler;unit-testing</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <Target Name="CopyPackage" AfterTargets="Pack">
     <Move SourceFiles="$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg" DestinationFolder="W:\C#\nuget.local" />
   </Target>
+  <ItemGroup>
+    <None Update="README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
 
 </Project>
