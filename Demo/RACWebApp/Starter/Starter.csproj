@@ -25,11 +25,6 @@
     </ReadLinesFromFile>
     <Exec Command="dotnet remove $(ProjectPath) package $(CommonPackageName)" IgnoreExitCode="True" />
     <Exec Command="dotnet add $(ProjectPath) package $(CommonPackageName) --version $(CommonPackageVersion) --source $(ProjectDir)" />
-    <!--<ItemGroup>
-      <None Update="$(CommonPackageName).$(CommonPackageVersion).nupkg">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      </None>
-    </ItemGroup>-->
 
     <ItemGroup>
       <AssemblyAttribute Include="Net.Leksi.Demo.RACWebApp.Starter.MyAttribute">

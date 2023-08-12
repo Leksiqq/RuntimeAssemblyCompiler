@@ -8,28 +8,38 @@
     <AssemblyName>Net.Leksi.RACWebApp.Starter</AssemblyName>
     <RootNamespace>Net.Leksi.RACWebApp.Starter</RootNamespace>
     <CommonPackageName>Net.Leksi.RACWebApp.Common</CommonPackageName>
-    <CommonPackageVersion>1.0.5</CommonPackageVersion>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="$(CommonPackageName)" Version="$(CommonPackageVersion)" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="$(CommonPackageName).$(CommonPackageVersion).nupkg">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-  <ItemGroup>
-    <AssemblyAttribute Include="Net.Leksi.Demo.RACWebApp.Starter.MyAttribute">
-      <_Parameter1>$(CommonPackageName)</_Parameter1>
-      <_Parameter2>$(CommonPackageVersion)</_Parameter2>
-    </AssemblyAttribute>
-  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\Library\RuntimeAssemblyCompilerDebug.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Net.Leksi.RACWebApp.Common" Version="1.0.17" />
+  </ItemGroup>
+
+  <Target Name="BuildCommon" BeforeTargets="PreBuild">
+    <MSBuild Projects="$(ProjectDir)\..\Common\Common.csproj" Properties="Configuration=$(Configuration);Platform=$(Platform)" />
+  </Target>
+  
+  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
+    <ReadLinesFromFile File=".\CommonVersion.txt">
+      <Output TaskParameter="Lines" PropertyName="CommonPackageVersion" />
+    </ReadLinesFromFile>
+    <Exec Command="dotnet remove $(ProjectPath) package $(CommonPackageName)" IgnoreExitCode="True" />
+    <Exec Command="dotnet add $(ProjectPath) package $(CommonPackageName) --version $(CommonPackageVersion) --source $(ProjectDir)" />
+
+    <ItemGroup>
+      <AssemblyAttribute Include="Net.Leksi.Demo.RACWebApp.Starter.MyAttribute">
+        <_Parameter1>$(CommonPackageName)</_Parameter1>
+        <_Parameter2>$(CommonPackageVersion)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+  
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="del $(TargetDir)$(CommonPackageName).*.nupkg" />
+    <Exec Command="copy $(CommonPackageName).$(CommonPackageVersion).nupkg $(TargetDir)" />
+  </Target>
 
 </Project>
