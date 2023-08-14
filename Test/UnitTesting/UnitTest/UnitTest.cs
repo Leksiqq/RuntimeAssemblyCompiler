@@ -1,10 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.VisualStudio.TestPlatform.Utilities;
 using Net.Leksi.RACWebApp.Common;
 using Net.Leksi.RuntimeAssemblyCompiler;
 using System.Diagnostics;
-using System.IO;
 using System.Reflection;
 using System.Text;
 
