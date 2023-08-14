@@ -18,10 +18,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Library\RuntimeAssemblyCompilerDebug.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Update="Net.Leksi.RACWebApp.Common.$(CommonVersion).nupkg">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
