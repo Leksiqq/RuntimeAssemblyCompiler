@@ -261,16 +261,25 @@ public class Project : IDisposable
 
     public string? GetLibraryFile(string path)
     {
-        string assemblyFile;
-        XmlDocument projectFile = new();
-        projectFile.Load(path);
-        if (projectFile.CreateNavigator()?.SelectSingleNode("/Project/PropertyGroup/AssemblyName") is XPathNavigator element)
+        string? assemblyFile = null;
+        try
         {
-            assemblyFile = element.Value;
+            XmlDocument projectFile = new();
+            projectFile.Load(path);
+            if (projectFile.CreateNavigator()?.SelectSingleNode("/Project/PropertyGroup/AssemblyName") is XPathNavigator element)
+            {
+                assemblyFile = element.Value;
+            }
+            else
+            {
+                assemblyFile = Path.GetFileNameWithoutExtension(path);
+            }
         }
-        else
+        catch (FileNotFoundException) { }
+        catch (XmlException) { }
+        if (string.IsNullOrEmpty(assemblyFile) && string.IsNullOrEmpty(Path.GetDirectoryName(path)))
         {
-            assemblyFile = Path.GetFileNameWithoutExtension(path);
+            assemblyFile = Path.Combine(_outDir, Path.GetFileNameWithoutExtension(path));
         }
         string result = Path.Combine(_outDir!, $"{assemblyFile}.dll");
         return File.Exists(result) ? result : null;

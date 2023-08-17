@@ -6,14 +6,18 @@
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RuntimeAssemblyCompiler</AssemblyName>
     <RootNamespace>Net.Leksi.RuntimeAssemblyCompiler</RootNamespace>
-    <PackageReleaseNotes>1.0.37 Добавлены методы, чтобы определить или отменить определение символов для условной компиляции.
-1.0.37 A possibility to define or undefine symbols for conditional compilation added.</PackageReleaseNotes>
+    <PackageReleaseNotes>
+      1.0.38 Исправлен метод Project.GetLibraryFile(string path).
+      1.0.38 Project.GetLibraryFile(string path) method fixed.
+      
+      1.0.37 Добавлены методы, чтобы определить или отменить определение символов для условной компиляции.
+      1.0.37 A possibility to define or undefine symbols for conditional compilation added.</PackageReleaseNotes>
   </PropertyGroup>
   <Choose>
     <When Condition=" '$(Configuration)'=='Release' ">
       <PropertyGroup>
         <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-        <Version>1.0.37</Version>
+        <Version>1.0.38</Version>
         <Authors>leksiq</Authors>
         <Title>Runtime Assembly Compiler</Title>
         <Description>
