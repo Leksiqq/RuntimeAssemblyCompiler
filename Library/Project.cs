@@ -27,6 +27,7 @@ public class Project : IDisposable
     private readonly List<ProjectHolder> _projects = new();
     private readonly List<string> _contents = new();
     private HashSet<string>? _allContents = null;
+    private HashSet<string> _symbols = new();
 
     private string _lockFile = string.Empty;
     private string _projectFile = null!;
@@ -196,6 +197,16 @@ public class Project : IDisposable
         return project;
     }
 
+    public void Define(string symbol)
+    {
+        _symbols.Add(symbol);
+    }
+
+    public void Undef(string symbol)
+    {
+        _symbols.Remove(symbol);
+    }
+
     public void AddPackage(string name, string version, string? source = null)
     {
         if (_packages.Any(p => name.Equals(p.Name)))
@@ -352,6 +363,11 @@ public class Project : IDisposable
         <GeneratePackageOnBuild>{(GeneratePackage ? s_true : s_false)}</GeneratePackageOnBuild>
     </PropertyGroup>
 </Project>");
+            if (_symbols.Any())
+            {
+                XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!.SelectSingleNode("PropertyGroup")!;
+                nav.AppendChild($"<DefineConstants>{string.Join(';', _symbols)}</DefineConstants>");
+            }
             if (_contents.Any())
             {
                 XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!;

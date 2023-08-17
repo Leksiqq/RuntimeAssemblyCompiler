@@ -47,6 +47,9 @@ public static class Configure
 {
     public static void Application(WebApplication app)
     {
+#if Defined
+        Console.WriteLine(""Defined"");
+#endif
         app.Run(
             async context =>  await context.Response.WriteAsync(
                 File.ReadAllText(
@@ -67,6 +70,9 @@ public static class Configure
 Hello World!
 ");
         config.AddContent("Hello.txt");
+
+        config.Define("Defined");
+
         server.AddProject(config);
 
         server.Compile();
