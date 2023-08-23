@@ -10,4 +10,5 @@ public class ProjectOptions
     public string? ProjectDir { get; set; } = null;
     public OutputType OutputType { get; set; } = OutputType.Library;
     public bool GeneratePackage { get; set; } = false;
+    public string? PathToDotnetExe { get; set; } = null;
 }

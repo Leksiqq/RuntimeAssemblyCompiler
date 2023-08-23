@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Runtime.Loader;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.XPath;
 
@@ -92,6 +93,11 @@ public class Project : IDisposable
     public OutputType OutputType { get; private set; } = OutputType.Library;
     public bool GeneratePackage { get; private set; } = false;
     public bool IsTemporary { get; private set; } = false;
+    public string AdditionalDotnetOptions { get; set; } = string.Empty;
+    public string NoWarn { get; set; } = string.Empty;
+    public string LastBuildLog { get; private set; } = string.Empty;
+    public string PathToDotnetExe { get; private set; } = string.Empty;
+    public bool ThrowAtBuildWarnings { get; set; } = false;
 
     static Project()
     {
@@ -177,7 +183,24 @@ public class Project : IDisposable
                 @namespace = options.Namespace;
             }
         }
+        string? pathToDotnet = options.PathToDotnetExe;
+        if (string.IsNullOrEmpty(pathToDotnet))
+        {
+            Process where = new();
 
+            where.StartInfo = new ProcessStartInfo
+            {
+                FileName = "where.exe",
+                Arguments = "dotnet",
+                RedirectStandardOutput = true,
+            };
+            where.Start();
+            pathToDotnet = where.StandardOutput.ReadToEnd().Trim();
+        }
+        if (string.IsNullOrEmpty(pathToDotnet))
+        {
+            throw new InvalidOperationException($"dotnet.exe is not found. Make sure it is in PATH or set {nameof(ProjectOptions)}.{nameof(options.PathToDotnetExe)} property!");
+        }
         Project project = new()
         {
             Name = name,
@@ -190,6 +213,7 @@ public class Project : IDisposable
             ProjectDir = options.ProjectDir ?? GetTemporaryDirectory(),
             OutputType = options.OutputType,
             GeneratePackage = options.GeneratePackage,
+            PathToDotnetExe = pathToDotnet,
         };
         project._projectFile = Path.Combine(project.ProjectDir, $"{project.Name}.csproj");
         project._outDir = Path.Combine(project.ProjectDir, s_outputDirName);
@@ -287,11 +311,13 @@ public class Project : IDisposable
 
     public void Compile()
     {
+        LastBuildLog = string.Empty;
+
         _allContents = new HashSet<string>();
 
         CreateProjectFile(this);
 
-        RunDotnet($"build \"{_projectFile}\" --configuration {Configuration} --output \"{_outDir}\" --use-current-runtime");
+        RunDotnet($"build \"{_projectFile}\" --configuration {Configuration} --output \"{_outDir}\" --use-current-runtime{(!string.IsNullOrEmpty(AdditionalDotnetOptions) ? $" {AdditionalDotnetOptions}" : string.Empty)}");
 
         LibraryFile = Path.Combine(_outDir!, $"{FullName}.dll");
         if (OutputType is OutputType.Exe || OutputType is OutputType.WinExe)
@@ -458,6 +484,14 @@ public class Project : IDisposable
                     xw1.Close();
                 }
             }
+            if (!string.IsNullOrEmpty(NoWarn))
+            {
+                XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!;
+                nav.AppendChild(@$"<PropertyGroup>
+    <NoWarn>{NoWarn}</NoWarn>
+</PropertyGroup>
+");
+            }
             XmlWriter xw = XmlWriter.Create(_projectFile, xws);
             xml.WriteTo(xw);
             xw.Close();
@@ -474,45 +508,61 @@ public class Project : IDisposable
 
     private void RunDotnet(string arguments)
     {
-        StringBuilder? sbError = null;
-        string? output = null;
+        StringBuilder sbError = new();
+        StringBuilder sbData = new();
 
         Process dotnet = new();
 
+        bool throwAtWarnings = false;
+
         dotnet.StartInfo = new()
         {
-            FileName = @"C:\Program Files\dotnet\dotnet.exe",
+            FileName = PathToDotnetExe,
             Arguments = arguments,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = LogEncoding,
+            StandardErrorEncoding = LogEncoding,
         };
-        if (!IsVerbose)
+        dotnet.ErrorDataReceived += (s, e) =>
         {
-            dotnet.StartInfo.RedirectStandardOutput = true;
-            dotnet.StartInfo.RedirectStandardError = true;
-            dotnet.StartInfo.StandardOutputEncoding = LogEncoding;
-            dotnet.StartInfo.StandardErrorEncoding = LogEncoding;
-            sbError = new();
+            sbError.AppendLine(e.Data);
+            if (IsVerbose)
+            {
+                Console.Error.WriteLine(e.Data);
+            }
+        };
+        dotnet.OutputDataReceived += (s, e) => 
+        { 
+            sbData.AppendLine(e.Data);
+            if (IsVerbose)
+            {
+                Console.Out.WriteLine(e.Data);
+            }
+            if(ThrowAtBuildWarnings && !throwAtWarnings && !string.IsNullOrEmpty(e.Data) && Regex.IsMatch(e.Data, "\\:\\swarning\\sCS\\d{4}:"))
+            {
+                throwAtWarnings = true;
+            }
+        };
 
-            dotnet.ErrorDataReceived += (s, e) => sbError.Append(e.Data);
-
-        }
         dotnet.Start();
-
-        if (!IsVerbose)
-        {
-            dotnet.BeginErrorReadLine();
-            output = dotnet.StandardOutput.ReadToEnd();
-        }
-
+        dotnet.BeginErrorReadLine();
+        dotnet.BeginOutputReadLine();
 
         if (!dotnet.HasExited)
         {
             dotnet.WaitForExit();
         }
 
-        bool success = dotnet.ExitCode == 0;
+        LastBuildLog = $"`dotnet {arguments}`\n{sbData}\n{sbError}";
+
         if (dotnet.ExitCode != 0)
         {
-            throw new InvalidOperationException($"Error running `dotnet {arguments}`:\n{output!}\n{sbError!.ToString()}");
+            throw new InvalidOperationException($"Ended with errors: {(IsVerbose ? $"`dotnet {arguments}`" : LastBuildLog)}");
+        }
+        if (throwAtWarnings) 
+        {
+            throw new InvalidOperationException($"Ended with warnings {(IsVerbose ? $"`dotnet {arguments}`" : LastBuildLog)}");
         }
     }
 
