@@ -6,23 +6,27 @@
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RuntimeAssemblyCompiler</AssemblyName>
     <RootNamespace>Net.Leksi.RuntimeAssemblyCompiler</RootNamespace>
-    <PackageReleaseNotes>1.1.0 Добавлена функциональность: 
+    <PackageReleaseNotes>
+      1.1.0 Добавлена функциональность:
       возможность игнорировать определённые предупреждения компилятора;
       возможность выбрасывать исключение при наличии предупреждений компилятора, кроме игнорируемых;
       возможность получать лог компиляции в виде строки при выключенном режиме IsVerbose;
-      возможность использовать дополнительные опции компилятора.
+      возможность использовать дополнительные опции компилятора;
+      возможность задавать расположение программы dotnet.exe.
       1.1.0 Added functionality:
       the ability to ignore certain compiler warnings;
       the ability to throw an exception in the presence of compiler warnings, except for ignored ones;
       the ability to receive the compilation log as a string when the IsVerbose mode is off;
-      the ability to use additional compiler options.
-      
-      
+      the ability to use additional compiler options;
+      the ability to set the location of the dotnet.exe program.
+
+
       1.0.38 Исправлен метод Project.GetLibraryFile(string path).
       1.0.38 Project.GetLibraryFile(string path) method fixed.
-      
+
       1.0.37 Добавлены методы, чтобы определить или отменить определение символов для условной компиляции.
       1.0.37 A possibility to define or undefine symbols for conditional compilation added.</PackageReleaseNotes>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <Choose>
     <When Condition=" '$(Configuration)'=='Release' ">
@@ -43,7 +47,7 @@
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
       </PropertyGroup>
       <ItemGroup>
-        <None Update="README.md">
+        <None Update="..\README.md">
           <Pack>True</Pack>
           <PackagePath>\</PackagePath>
         </None>
@@ -53,5 +57,11 @@
   <Target Name="CopyPackage" AfterTargets="Pack" Condition=" '$(Configuration)'=='Release' ">
     <Move SourceFiles="$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg" DestinationFolder="W:\C#\nuget.local" />
   </Target>
+  <ItemGroup>
+    <None Include="..\README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
 
 </Project>
