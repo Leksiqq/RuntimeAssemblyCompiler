@@ -6,7 +6,15 @@
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RuntimeAssemblyCompiler</AssemblyName>
     <RootNamespace>Net.Leksi.RuntimeAssemblyCompiler</RootNamespace>
-    <PackageReleaseNotes>
+    <PackageReleaseNotes>1.2.0  Добавлена возможность задать локаль вывода компилятора.
+      Изменена структура папки назначения проекта.
+      Изменена конфигурация по умолчанию на специальную: RAC.
+      Задание конфигурации, отличной от конфигурации по умолчанию, перенесено в ProjectOptions.
+      1.2.0 Added the ability to set the compiler output locale.
+      The structure of the project destination folder has been changed.
+      Changed default configuration to special: RAC.
+      Setting a non-default configuration has been moved to ProjectOptions.
+
       1.1.0 Добавлена функциональность:
       возможность игнорировать определённые предупреждения компилятора;
       возможность выбрасывать исключение при наличии предупреждений компилятора, кроме игнорируемых;
@@ -32,7 +40,7 @@
     <When Condition=" '$(Configuration)'=='Release' ">
       <PropertyGroup>
         <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-        <Version>1.1.0</Version>
+        <Version>1.2.0</Version>
         <Authors>leksiq</Authors>
         <Title>Runtime Assembly Compiler</Title>
         <Description>

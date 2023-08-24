@@ -1,4 +1,6 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Diagnostics;
+using System.Runtime.Intrinsics;
 using System.Runtime.Loader;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -20,7 +22,6 @@ public class Project : IDisposable
 
     private const string s_true = "True";
     private const string s_false = "False";
-    private const string s_outputDirName = "bin";
     private const string s_version = "1.0.0";
     private const string s_disposedFile = ".disposed";
 
@@ -87,7 +88,7 @@ public class Project : IDisposable
     public string TargetFramework { get; private set; } = null!;
     public bool IsVerbose { get; set; } = false;
     public Encoding LogEncoding { get; set; } = Encoding.UTF8;
-    public string Configuration { get; set; } = "Release";
+    public string Configuration { get; private set; } = "RAC";
     public string? LibraryFile { get; private set; } = null;
     public string? ExeFile { get; private set; } = null;
     public OutputType OutputType { get; private set; } = OutputType.Library;
@@ -98,6 +99,7 @@ public class Project : IDisposable
     public string LastBuildLog { get; private set; } = string.Empty;
     public string PathToDotnetExe { get; private set; } = string.Empty;
     public bool ThrowAtBuildWarnings { get; set; } = false;
+    public string BuildOutputLang { get; private set; } = "en";
 
     static Project()
     {
@@ -211,12 +213,26 @@ public class Project : IDisposable
                 $"net{Environment.Version.Major}.{Environment.Version.Minor}",
             IsTemporary = options.ProjectDir is null,
             ProjectDir = options.ProjectDir ?? GetTemporaryDirectory(),
-            OutputType = options.OutputType,
-            GeneratePackage = options.GeneratePackage,
             PathToDotnetExe = pathToDotnet,
         };
+        if (!string.IsNullOrEmpty(options.BuildOutputLang))
+        {
+            project.BuildOutputLang = options.BuildOutputLang;
+        }
+        if (!string.IsNullOrEmpty(options.Configuration))
+        {
+            project.Configuration = options.Configuration;
+        }
+        if (options.OutputType is OutputType outputType)
+        {
+            project.OutputType = outputType;
+        }
+        if (options.GeneratePackage is bool generatePackage)
+        {
+            project.GeneratePackage = generatePackage;
+        }
+        project._outDir = Path.Combine(project.ProjectDir, "bin", project.Configuration, project.TargetFramework);
         project._projectFile = Path.Combine(project.ProjectDir, $"{project.Name}.csproj");
-        project._outDir = Path.Combine(project.ProjectDir, s_outputDirName);
         project._lockFile = Path.Combine(project.ProjectDir, ".lock");
         return project;
     }
@@ -247,7 +263,7 @@ public class Project : IDisposable
 
     public void AddPackage(Project project)
     {
-        AddPackage(project.FullName, s_version, project._outDir);
+        AddPackage(project.FullName, s_version, Path.Combine(project._outDir, ".."));
     }
 
     public void AddProject(string path)
@@ -317,7 +333,7 @@ public class Project : IDisposable
 
         CreateProjectFile(this);
 
-        RunDotnet($"build \"{_projectFile}\" --configuration {Configuration} --output \"{_outDir}\" --use-current-runtime{(!string.IsNullOrEmpty(AdditionalDotnetOptions) ? $" {AdditionalDotnetOptions}" : string.Empty)}");
+        RunDotnet($"build \"{_projectFile}\" --configuration {Configuration}{(!string.IsNullOrEmpty(AdditionalDotnetOptions) ? $" {AdditionalDotnetOptions}" : string.Empty)}");
 
         LibraryFile = Path.Combine(_outDir!, $"{FullName}.dll");
         if (OutputType is OutputType.Exe || OutputType is OutputType.WinExe)
@@ -466,19 +482,23 @@ public class Project : IDisposable
                         {
                             sources = new List<string>();
                         }
-                        sources.Add(package.Source);
+                        sources.Add(Path.Combine(package.Source, $"{package.Name}.{package.Version}.nupkg"));
                     }
                     nav.AppendChild(@$"<PackageReference Include=""{package.Name}"" Version=""{package.Version}"" />");
                 }
                 if (sources?.Any() ?? false)
                 {
-                    XmlDocument nugetConfig = new();
-                    nugetConfig.LoadXml("<configuration><packageSources/></configuration>");
-                    XPathNavigator navNugetConfig = nugetConfig.CreateNavigator()!.SelectSingleNode("/configuration/packageSources")!;
                     for (int i = 0; i < sources.Count; ++i)
                     {
-                        navNugetConfig.AppendChild($"<add key=\"key_{i}\" value=\"{sources[i]}\"/>");
+                        File.Copy(sources[i], Path.Combine(_outDir, Path.GetFileName(sources[i])));
                     }
+                    XmlDocument nugetConfig = new();
+                    nugetConfig.LoadXml(@$"<configuration>
+    <packageSources>
+        <add key=""key"" value=""{_outDir}""/>
+    </packageSources>
+</configuration>
+");
                     XmlWriter xw1 = XmlWriter.Create(Path.Combine(ProjectDir!, "NuGet.Config"), xws);
                     nugetConfig.WriteTo(xw1);
                     xw1.Close();
@@ -524,6 +544,14 @@ public class Project : IDisposable
             StandardOutputEncoding = LogEncoding,
             StandardErrorEncoding = LogEncoding,
         };
+        if (dotnet.StartInfo.EnvironmentVariables.ContainsKey("DOTNET_CLI_UI_LANGUAGE"))
+        {
+            dotnet.StartInfo.EnvironmentVariables["DOTNET_CLI_UI_LANGUAGE"] = BuildOutputLang;
+        }
+        else
+        {
+            dotnet.StartInfo.EnvironmentVariables.Add("DOTNET_CLI_UI_LANGUAGE", BuildOutputLang);
+        }
         dotnet.ErrorDataReceived += (s, e) =>
         {
             sbError.AppendLine(e.Data);
@@ -549,10 +577,7 @@ public class Project : IDisposable
         dotnet.BeginErrorReadLine();
         dotnet.BeginOutputReadLine();
 
-        if (!dotnet.HasExited)
-        {
-            dotnet.WaitForExit();
-        }
+        dotnet.WaitForExit();
 
         LastBuildLog = $"`dotnet {arguments}`\n{sbData}\n{sbError}";
 

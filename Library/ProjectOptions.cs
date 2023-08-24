@@ -8,7 +8,10 @@ public class ProjectOptions
     public string? Sdk { get; set; } = null;
     public string? TargetFramework { get; set; } = null;
     public string? ProjectDir { get; set; } = null;
-    public OutputType OutputType { get; set; } = OutputType.Library;
-    public bool GeneratePackage { get; set; } = false;
+    public OutputType? OutputType { get; set; } = null;
+    public bool? GeneratePackage { get; set; } = null;
     public string? PathToDotnetExe { get; set; } = null;
+    public string? BuildOutputLang { get; set; } = null;
+    public string? Configuration { get; set; } = null;
+
 }

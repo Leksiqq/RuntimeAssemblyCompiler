@@ -11,10 +11,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\Library\RuntimeAssemblyCompiler.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="Net.Leksi.RACWebApp.Common" Version="1.0.17" />
   </ItemGroup>
 

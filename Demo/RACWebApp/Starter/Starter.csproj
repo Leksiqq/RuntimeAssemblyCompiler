@@ -12,7 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="Net.Leksi.RACWebApp.Common" Version="1.0.17" />
-    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="1.1.0" />
+    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="1.2.0" />
   </ItemGroup>
 
   <Target Name="BuildCommon" BeforeTargets="PreBuild">

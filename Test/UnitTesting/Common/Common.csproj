@@ -10,9 +10,9 @@
   </PropertyGroup>
 
   <Target Name="CopyPackage" AfterTargets="Pack">
-    <Exec Command="del $(PackageId).*.nupkg" WorkingDirectory="$(ProjectDir)/../UnitTest"/>
-    <Exec Command="del CommonVersion.txt" WorkingDirectory="$(ProjectDir)/../UnitTest"/>
-    <WriteLinesToFile Lines="$(Version)" File="$(ProjectDir)/../UnitTest/CommonVersion.txt"/>
+    <Exec Command="del $(PackageId).*.nupkg" WorkingDirectory="$(ProjectDir)/../UnitTest" />
+    <Exec Command="del CommonVersion.txt" WorkingDirectory="$(ProjectDir)/../UnitTest" />
+    <WriteLinesToFile Lines="$(Version)" File="$(ProjectDir)/../UnitTest/CommonVersion.txt" />
     <Move SourceFiles="$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg" DestinationFolder="$(ProjectDir)/../UnitTest" />
   </Target>
 

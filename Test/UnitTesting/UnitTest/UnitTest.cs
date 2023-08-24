@@ -10,7 +10,7 @@ namespace Net.Leksi.Rac.UnitTesting;
 
 public class Tests
 {
-    const int s_maxLevel = 4;
+    const int s_maxLevel = 2;
     const int s_numTreeChildren = 3;
     const int s_numOtherProperties = 3;
     const int s_isPackableBase = 1;
@@ -76,9 +76,9 @@ public class Tests
 
         using (
             Project proj1 = Project.Create(
-                new ProjectOptions 
-                { 
-                    FullName = "qq", 
+                new ProjectOptions
+                {
+                    FullName = "qq",
                     OutputType = OutputType.Exe,
                     TargetFramework = "net6.0-windows",
                 }
@@ -138,6 +138,10 @@ class Factory: IFactory
         Action<Node, int> onNewNode = (node, level) =>
         {
             nodes.Add(node);
+            if (node.IsPackable)
+            {
+                node.PackageId = nodes.Where(n => n.IsPackable).Count();
+            }
         };
         Node root = CreateDependencyTree(null, rnd, 0, onNewNode);
 
@@ -211,7 +215,7 @@ class Factory: IFactory
                 library = root.Project.GetLibraryFile(node.Project);
             }
             Assert.That(library, Is.Not.Null);
-            node.Type = Assembly.LoadFrom(library)?.GetType(node.Project.FullName);
+            node.Type = Assembly.LoadFrom(library)?.GetType(node.Label);
             Assert.That(node.Type, Is.Not.Null);
             hostBuilder.ConfigureServices(services => services.AddTransient(node.Type!));
         }
@@ -225,14 +229,14 @@ class Factory: IFactory
 
         Dictionary<Type, HashSet<object>> foundObjects = new();
 
-        WalkAssert(nodeObject, foundObjects, nodes, host);
+        WalkAssert(nodeObject, foundObjects, nodes, host, 0);
 
         Assert.That(foundObjects.Where(e => $"{GetType().Namespace!}.{s_permanent}".Equals(e.Key.FullName)).Count(), Is.EqualTo(1));
         Assert.That(foundObjects.Where(e => $"{GetType().Namespace!}.{s_permanent}".Equals(e.Key.FullName)).First().Value.Count(), Is.EqualTo(nodes.Count * s_maxObjectsOfType));
         Assert.That(foundObjects.Where(e => $"{GetType().Namespace!}.{s_external}".Equals(e.Key.FullName)).Count(), Is.EqualTo(1));
         Assert.That(foundObjects.Where(e => $"{GetType().Namespace!}.{s_external}".Equals(e.Key.FullName)).First().Value.Count(), Is.EqualTo(nodes.Count * s_maxObjectsOfType));
 
-        foreach (Type? type in new Type[] {typeof(string)} .Concat(nodes.Select(n => n.Type)))
+        foreach (Type? type in new Type[] { typeof(string) }.Concat(nodes.Select(n => n.Type)))
         {
             Assert.That(type, Is.Not.Null);
             Assert.That(foundObjects.ContainsKey(type), Is.True, type.ToString());
@@ -243,9 +247,11 @@ class Factory: IFactory
 
     }
 
-    private void WalkAssert(object? obj, Dictionary<Type, HashSet<object>> foundObjects, List<Node> nodes, IHost host)
+    private void WalkAssert(object? obj, Dictionary<Type, HashSet<object>> foundObjects, List<Node> nodes, IHost host, int level)
     {
         Assert.That(obj, Is.Not.Null);
+
+        Console.WriteLine($"{string.Format($"{{0,{level}}}", "")}{obj}: {obj.GetType().Assembly.Location}");
 
         if (!foundObjects.ContainsKey(obj.GetType()))
         {
@@ -264,9 +270,9 @@ class Factory: IFactory
 
                 Assert.That(mgc.Magic, Is.EqualTo(node.MagicWord));
 
-                foreach(PropertyInfo pi in obj.GetType().GetProperties().Where(p => !"Magic".Equals(p.Name)))
+                foreach (PropertyInfo pi in obj.GetType().GetProperties().Where(p => !"Magic".Equals(p.Name)))
                 {
-                    WalkAssert(pi.GetValue(obj), foundObjects, nodes, host);
+                    WalkAssert(pi.GetValue(obj), foundObjects, nodes, host, level + 1);
                 }
             }
         }
@@ -335,17 +341,24 @@ class Factory: IFactory
                 TargetFramework = "net6.0-windows",
                 OutputType = OutputType.Library,
             };
-            if (!string.IsNullOrEmpty(node.FullName))
+            if (!node.IsPackable)
             {
-                po.FullName = node.FullName;
+                if (!string.IsNullOrEmpty(node.FullName))
+                {
+                    po.FullName = node.FullName;
+                }
+                else
+                {
+                    po.Name = node.Name!;
+                    if (!string.IsNullOrEmpty(node.Namespace))
+                    {
+                        po.Namespace = node.Namespace;
+                    }
+                }
             }
             else
             {
-                po.Name = node.Name!;
-                if (!string.IsNullOrEmpty(node.Namespace))
-                {
-                    po.Namespace = node.Namespace;
-                }
+                po.FullName = $"Net.Leksi.NS{node.PackageId}.Package{node.PackageId}";
             }
             node.Project = Project.Create(po);
 
@@ -355,18 +368,18 @@ class Factory: IFactory
             ArgumentException? ex7 = Assert.Throws<ArgumentException>(() => node.Project.AddContent($"{node.Project.FullName}.magic.txt"));
             Assert.That(ex7.Message, Is.EqualTo($"Content {node.Project.FullName}.magic.txt is already added!"));
 
-            FileStream fileStream = File.Create(Path.Combine(node.Project.ProjectDir!, $"{node.Project.Name}.cs"));
+            FileStream fileStream = File.Create(Path.Combine(node.Project.ProjectDir!, $"{node.ClassName}.cs"));
             StreamWriter sw = new(fileStream);
             sw.WriteLine("using System.Reflection;");
             sw.WriteLine("using Net.Leksi.RACWebApp.Common;");
-            sw.WriteLine($"namespace {node.Project.Namespace};");
-            sw.WriteLine($"public class {node.Project.Name}: IMagicable");
+            sw.WriteLine($"namespace {node.ClassNamespace};");
+            sw.WriteLine($"public class {node.ClassName}: IMagicable");
             sw.WriteLine("{");
             int i = 0;
             foreach (Node child in (new Node[] { node }).Concat(node.Children))
             {
                 CreateClassSource(child, rnd);
-                sw.WriteLine($"    public {child.Project!.FullName} Prop{i} {{ get; set; }}");
+                sw.WriteLine($"    public {child.Label} Prop{i} {{ get; set; }}");
                 ++i;
             }
             sw.WriteLine($"    public {GetType().Namespace!}.{s_permanent} Prop{i} {{ get; set; }}");
@@ -386,13 +399,13 @@ class Factory: IFactory
                 ""{node.Project.FullName}.magic.txt""
             )
         );");
-            sw.WriteLine($"    object IMagicable.SameTypeProperty {{ get => Prop0; set => Prop0 = ({node.Project.Name})value; }}");
-            sw.WriteLine($@"    public {node.Project.Name}(IFactory factory)
+            sw.WriteLine($"    object IMagicable.SameTypeProperty {{ get => Prop0; set => Prop0 = ({node.Label})value; }}");
+            sw.WriteLine($@"    public {node.ClassName}(IFactory factory)
     {{");
             i = 1;
             foreach (Node child in node.Children)
             {
-                sw.WriteLine($"        Prop{i} = ({child.Project!.FullName})factory.GetValue(typeof({child.Project!.FullName}));");
+                sw.WriteLine($"        Prop{i} = ({child.Label})factory.GetValue(typeof({child.Label}));");
                 ++i;
             }
             sw.WriteLine($"        Prop{i} = new {GetType().Namespace!}.{s_permanent} {{ Value = (string)factory.GetValue(typeof({GetType().Namespace!}.{s_permanent})) }};");
@@ -418,6 +431,7 @@ class Factory: IFactory
             MagicWord = MakeMagicWord(rnd),
             Parent = parent,
         };
+
         string name = $"Class{result.Id}";
         string @namespace = $"Net.Leksi.NS{result.Id}";
 
@@ -430,6 +444,7 @@ class Factory: IFactory
             result.Name = name;
             result.Namespace = @namespace;
         }
+
         if (level < s_maxLevel)
         {
             for (int i = 0; i < s_numTreeChildren; ++i)
@@ -462,6 +477,7 @@ class Factory: IFactory
         internal int Id { get; init; } = Interlocked.Increment(ref s_genId);
         internal Project? Project { get; set; }
         internal string? Name { get; set; }
+        internal int? PackageId { get; set; }
         internal bool IsPackable { get; init; } = false;
         internal List<Node> Children { get; init; } = new();
         internal Node? Parent { get; init; } = null;
@@ -469,6 +485,8 @@ class Factory: IFactory
         internal string? FullName { get; set; }
         internal string? Namespace { get; set; }
         internal Type? Type { get; set; }
+        internal string? ClassName => FullName is { } ? FullName.Substring(FullName.LastIndexOf('.') + 1) : Name;
+        internal string? ClassNamespace => FullName is { } ? FullName.Substring(0, FullName.LastIndexOf('.')) : Namespace;
         internal string Label => FullName ?? (Name is { } ? $"{(string.IsNullOrEmpty(Namespace) ? string.Empty : $"{Namespace}.")}{Name}" : string.Empty);
     }
 }

@@ -16,6 +16,7 @@ internal class Program
             Name = "Server",
             Sdk = "Microsoft.NET.Sdk.Web",
             TargetFramework = "net6.0-windows7.0",
+            BuildOutputLang = "FR-fr",
         });
         server.IsVerbose = true;
         server.AddPackage(commonPackageName, commonPackageVersion, Path.GetDirectoryName(typeof(Program).Assembly.Location));
