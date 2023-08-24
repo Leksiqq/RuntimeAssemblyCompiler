@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.Intrinsics;
 using System.Runtime.Loader;
 using System.Text;
@@ -263,7 +264,7 @@ public class Project : IDisposable
 
     public void AddPackage(Project project)
     {
-        AddPackage(project.FullName, s_version, Path.Combine(project._outDir, ".."));
+        AddPackage(project.FullName, s_version, project._outDir);
     }
 
     public void AddProject(string path)
@@ -423,7 +424,7 @@ public class Project : IDisposable
             {
                 XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!;
                 nav.AppendChild("<ItemGroup/>");
-                nav.MoveToChild("ItemGroup", string.Empty);
+                nav = nav.SelectSingleNode("ItemGroup[last()]")!;
                 foreach (string path in _contents)
                 {
                     if (!root._allContents!.Add(path))
@@ -468,40 +469,47 @@ public class Project : IDisposable
                     }
                 }
             }
-            if (_packages.Any())
+            if (_packages.Any(p => string.IsNullOrEmpty(p.Source)))
             {
                 XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!;
                 nav.AppendChild("<ItemGroup/>");
                 nav = nav.SelectSingleNode("ItemGroup[last()]")!;
                 List<string>? sources = null;
-                foreach (PackageHolder package in _packages)
+                foreach (PackageHolder package in _packages.Where(p => string.IsNullOrEmpty(p.Source)))
                 {
-                    if (!string.IsNullOrEmpty(package.Source))
-                    {
-                        if (sources is null)
-                        {
-                            sources = new List<string>();
-                        }
-                        sources.Add(Path.Combine(package.Source, $"{package.Name}.{package.Version}.nupkg"));
-                    }
                     nav.AppendChild(@$"<PackageReference Include=""{package.Name}"" Version=""{package.Version}"" />");
                 }
-                if (sources?.Any() ?? false)
+            }
+            if (_packages.Any(p => !string.IsNullOrEmpty(p.Source)))
+            {
+                XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!;
+                nav.AppendChild("<ItemGroup/>");
+                nav = nav.SelectSingleNode("ItemGroup[last()]")!;
+                string packages = Path.Combine(ProjectDir, "packages");
+                if (!Directory.Exists(packages))
                 {
-                    for (int i = 0; i < sources.Count; ++i)
+                    Directory.CreateDirectory(packages);
+                }
+                foreach (PackageHolder package in _packages.Where(p => !string.IsNullOrEmpty(p.Source)))
+                {
+                    string targetPackage = Path.Combine(packages, $"{package.Name}.{package.Version}");
+                    if (!Directory.Exists(targetPackage))
                     {
-                        File.Copy(sources[i], Path.Combine(_outDir, Path.GetFileName(sources[i])));
+                        Directory.CreateDirectory(targetPackage);
                     }
-                    XmlDocument nugetConfig = new();
-                    nugetConfig.LoadXml(@$"<configuration>
-    <packageSources>
-        <add key=""key"" value=""{_outDir}""/>
-    </packageSources>
-</configuration>
-");
-                    XmlWriter xw1 = XmlWriter.Create(Path.Combine(ProjectDir!, "NuGet.Config"), xws);
-                    nugetConfig.WriteTo(xw1);
-                    xw1.Close();
+                    foreach (string file in Directory.GetFiles(package.Source!))
+                    {
+                        string targetFile = Path.Combine(targetPackage, Path.GetFileName(file));
+                        if (!File.Exists(targetFile))
+                        {
+                            File.Copy(file, targetFile);
+                            nav.AppendChild(@$"<Content Include=""{targetFile}"">
+    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+</Content>");
+                        }
+                    }
                 }
             }
             if (!string.IsNullOrEmpty(NoWarn))

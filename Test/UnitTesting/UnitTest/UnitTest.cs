@@ -135,17 +135,25 @@ class Factory: IFactory
             Assert.That(output, Is.EqualTo("Hello world!"));
 
         }
+        List<int> availablePackageIds = new();
+        int numLeaves = (int)Math.Ceiling(Math.Pow(s_numTreeChildren, s_maxLevel));
+        for (int i = 1; i <= numLeaves; ++i)
+        {
+            availablePackageIds.Add(i);
+        }
         Action<Node, int> onNewNode = (node, level) =>
         {
             nodes.Add(node);
             if (node.IsPackable)
             {
-                node.PackageId = nodes.Where(n => n.IsPackable).Count();
+                node.PackageId = availablePackageIds[rnd.Next(availablePackageIds.Count)];
+                availablePackageIds.Remove((int)node.PackageId);
             }
         };
         Node root = CreateDependencyTree(null, rnd, 0, onNewNode);
 
         Assert.That(nodes.Count, Is.EqualTo(((int)Math.Round(Math.Pow(s_numTreeChildren, s_maxLevel + 1))) / (s_numTreeChildren - 1)));
+        Assert.That(nodes.Where(n => !n.Children.Any()).Count, Is.EqualTo(numLeaves));
 
         Console.WriteLine($"{DateTime.Now - start}: Tree built: (nodes: {nodes.Count}, edges: {nodes.Select(n => n.Children.Count).Sum()})");
 
@@ -163,6 +171,11 @@ class Factory: IFactory
             node.Project.AddProject(Path.Combine(projectDir, "..", s_external, $"{s_external}.csproj"));
             ArgumentException ex3 = Assert.Throws<ArgumentException>(() => node.Project.AddProject(Path.Combine(projectDir, "..", s_external, $"{s_external}.csproj")));
             Assert.That(ex3.Message, Is.EqualTo($"Project {Path.Combine(projectDir, "..", s_external, $"{s_external}.csproj")} is already added!"));
+        }
+
+        foreach (Node node in nodes)
+        {
+            Console.WriteLine($"{node.Project!.FullName}: {node.Label}");
         }
 
         foreach (Node node in nodes.Where(n => n.IsPackable))
@@ -251,7 +264,7 @@ class Factory: IFactory
     {
         Assert.That(obj, Is.Not.Null);
 
-        Console.WriteLine($"{string.Format($"{{0,{level}}}", "")}{obj}: {obj.GetType().Assembly.Location}");
+        //Console.WriteLine($"{string.Format($"{{0,{level}}}", "")}{obj}: {obj.GetType().Assembly.Location}");
 
         if (!foundObjects.ContainsKey(obj.GetType()))
         {
