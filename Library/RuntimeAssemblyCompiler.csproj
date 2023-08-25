@@ -6,7 +6,12 @@
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RuntimeAssemblyCompiler</AssemblyName>
     <RootNamespace>Net.Leksi.RuntimeAssemblyCompiler</RootNamespace>
-    <PackageReleaseNotes>1.2.0  Добавлена возможность задать локаль вывода компилятора.
+    <PackageReleaseNotes>1.2.1 Добавлена возможность получить абсолютный путь к созданному nuget-пакету.
+      Исправлены ошибки при работе с nuget-пакетами, создаваемыми во время исполнения.
+      1.2.1 Added the ability to get the absolute path to the created nuget package.
+      Fixed bugs when working with nuget packages created at runtime.
+
+      1.2.0  Добавлена возможность задать локаль вывода компилятора.
       Изменена структура папки назначения проекта.
       Изменена конфигурация по умолчанию на специальную: RAC.
       Задание конфигурации, отличной от конфигурации по умолчанию, перенесено в ProjectOptions.
@@ -40,7 +45,7 @@
     <When Condition=" '$(Configuration)'=='Release' ">
       <PropertyGroup>
         <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-        <Version>1.2.0</Version>
+        <Version>1.2.1</Version>
         <Authors>leksiq</Authors>
         <Title>Runtime Assembly Compiler</Title>
         <Description>
