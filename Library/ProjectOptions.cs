@@ -20,4 +20,6 @@ public class ProjectOptions
     public bool? IsVerbose { get; set; } = null;
     public Encoding? LogEncoding { get; set; } = null;
     public bool? ThrowAtBuildWarnings { get; set; } = null;
+    public Action<Project>? OnProjectFileGenerated { get; set; } = null;
+
 }

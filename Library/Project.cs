@@ -30,7 +30,6 @@ public class Project : IDisposable
     private HashSet<string> _symbols = new();
 
     private string _lockFile = string.Empty;
-    private string _projectFile = null!;
     private string _outDir = null!;
 
     public static bool IsUnitTesting
@@ -98,6 +97,8 @@ public class Project : IDisposable
     public string PathToDotnetExe { get; private set; } = string.Empty;
     public bool ThrowAtBuildWarnings { get; set; } = false;
     public string BuildOutputLang { get; private set; } = "en";
+    public string ProjectPath { get; private set; } = null!;
+    public Action<Project>? OnProjectFileGenerated { get; set; } = null;
 
     static Project()
     {
@@ -210,8 +211,8 @@ public class Project : IDisposable
             TargetFramework = options.TargetFramework ??
                 $"net{Environment.Version.Major}.{Environment.Version.Minor}",
             IsTemporary = options.ProjectDir is null,
-            ProjectDir = options.ProjectDir ?? GetTemporaryDirectory(),
-            PathToDotnetExe = pathToDotnet,
+            ProjectDir = Path.GetFullPath(options.ProjectDir ?? GetTemporaryDirectory()),
+            PathToDotnetExe = Path.GetFullPath(pathToDotnet),
         };
         if (!string.IsNullOrEmpty(options.BuildOutputLang))
         {
@@ -249,9 +250,17 @@ public class Project : IDisposable
         {
             project.LogEncoding = logEncoding;
         }
+        if (options.OnProjectFileGenerated is { })
+        {
+            project.OnProjectFileGenerated = options.OnProjectFileGenerated;
+        }
         project._outDir = Path.Combine(project.ProjectDir, "bin", project.Configuration, project.TargetFramework);
-        project._projectFile = Path.Combine(project.ProjectDir, $"{project.Name}.csproj");
+        project.ProjectPath = Path.Combine(project.ProjectDir, $"{project.Name}.csproj");
         project._lockFile = Path.Combine(project.ProjectDir, ".lock");
+        if (File.Exists(project._lockFile))
+        {
+            File.Delete(project._lockFile);
+        }
         return project;
     }
 
@@ -286,6 +295,7 @@ public class Project : IDisposable
 
     public void AddProject(string path)
     {
+        path = Path.GetFullPath(path);
         if (_projects.Any(p => path.Equals(p.Path)))
         {
             throw new ArgumentException($"Project {path} is already added!");
@@ -355,9 +365,9 @@ public class Project : IDisposable
 
         _allContents = new HashSet<string>();
 
-        CreateProjectFile(this);
+        GenerateProjectFile(this);
 
-        RunDotnet($"build \"{_projectFile}\" --configuration {Configuration}{(!string.IsNullOrEmpty(AdditionalDotnetOptions) ? $" {AdditionalDotnetOptions}" : string.Empty)}");
+        RunDotnet($"build \"{ProjectPath}\" --configuration {Configuration}{(!string.IsNullOrEmpty(AdditionalDotnetOptions) ? $" {AdditionalDotnetOptions}" : string.Empty)}");
 
         LibraryFile = Path.Combine(_outDir!, $"{FullName}.dll");
         if (OutputType is OutputType.Exe || OutputType is OutputType.WinExe)
@@ -417,7 +427,7 @@ public class Project : IDisposable
         return tempDirectory;
     }
 
-    private void CreateProjectFile(Project root)
+    private void GenerateProjectFile(Project root)
     {
         if (!File.Exists(_lockFile))
         {
@@ -482,9 +492,9 @@ public class Project : IDisposable
                             project.Project.LogEncoding = LogEncoding;
                         }
 
-                        project.Project.CreateProjectFile(root);
+                        project.Project.GenerateProjectFile(root);
 
-                        nav.AppendChild(@$"<ProjectReference Include=""{project.Project._projectFile}"" />");
+                        nav.AppendChild(@$"<ProjectReference Include=""{project.Project.ProjectPath}"" />");
                     }
                     else
                     {
@@ -533,7 +543,7 @@ public class Project : IDisposable
 </PropertyGroup>
 ");
             }
-            XmlWriter xw = XmlWriter.Create(_projectFile, xws);
+            XmlWriter xw = XmlWriter.Create(ProjectPath, xws);
             xml.WriteTo(xw);
             xw.Close();
 
@@ -544,6 +554,7 @@ public class Project : IDisposable
                     Console.WriteLine($"Temporary project {Name} was created at {ProjectDir}.");
                 }
             }
+            root.OnProjectFileGenerated?.Invoke(this);
         }
     }
 
