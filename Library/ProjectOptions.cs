@@ -1,4 +1,6 @@
-﻿namespace Net.Leksi.RuntimeAssemblyCompiler;
+﻿using System.Text;
+
+namespace Net.Leksi.RuntimeAssemblyCompiler;
 
 public class ProjectOptions
 {
@@ -13,5 +15,9 @@ public class ProjectOptions
     public string? PathToDotnetExe { get; set; } = null;
     public string? BuildOutputLang { get; set; } = null;
     public string? Configuration { get; set; } = null;
-
+    public string? AdditionalDotnetOptions { get; set; } = null;
+    public string? NoWarn { get; set; } = null;
+    public bool? IsVerbose { get; set; } = null;
+    public Encoding? LogEncoding { get; set; } = null;
+    public bool? ThrowAtBuildWarnings { get; set; } = null;
 }

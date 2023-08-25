@@ -1,7 +1,4 @@
-﻿using System;
-using System.Diagnostics;
-using System.IO;
-using System.Runtime.Intrinsics;
+﻿using System.Diagnostics;
 using System.Runtime.Loader;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -232,6 +229,26 @@ public class Project : IDisposable
         {
             project.GeneratePackage = generatePackage;
         }
+        if (!string.IsNullOrEmpty(options.AdditionalDotnetOptions))
+        {
+            project.AdditionalDotnetOptions = options.AdditionalDotnetOptions;
+        }
+        if (!string.IsNullOrEmpty(options.NoWarn))
+        {
+            project.NoWarn = options.NoWarn;
+        }
+        if (options.IsVerbose is bool isVerbose)
+        {
+            project.IsVerbose = isVerbose;
+        }
+        if (options.ThrowAtBuildWarnings is bool throwAtBuildWarnings)
+        {
+            project.ThrowAtBuildWarnings = throwAtBuildWarnings;
+        }
+        if (options.LogEncoding is Encoding logEncoding)
+        {
+            project.LogEncoding = logEncoding;
+        }
         project._outDir = Path.Combine(project.ProjectDir, "bin", project.Configuration, project.TargetFramework);
         project._projectFile = Path.Combine(project.ProjectDir, $"{project.Name}.csproj");
         project._lockFile = Path.Combine(project.ProjectDir, ".lock");
@@ -297,6 +314,12 @@ public class Project : IDisposable
     public string? GetLibraryFile(Project project)
     {
         string result = Path.Combine(_outDir!, $"{project.FullName}.dll");
+        return File.Exists(result) ? result : null;
+    }
+
+    public string? GetPackageFile(Project project)
+    {
+        string result = Path.Combine(_outDir!, "..", $"{project.FullName}.{s_version}.nupkg");
         return File.Exists(result) ? result : null;
     }
 
@@ -375,7 +398,7 @@ public class Project : IDisposable
         {
             File.WriteAllText(Path.Combine(ProjectDir, s_disposedFile), string.Empty);
         }
-        else if(!IsTemporary && File.Exists(_lockFile))
+        else if (!IsTemporary && File.Exists(_lockFile))
         {
             File.Delete(_lockFile);
         }
@@ -469,45 +492,35 @@ public class Project : IDisposable
                     }
                 }
             }
-            if (_packages.Any(p => string.IsNullOrEmpty(p.Source)))
+            if (_packages.Any())
             {
                 XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!;
                 nav.AppendChild("<ItemGroup/>");
                 nav = nav.SelectSingleNode("ItemGroup[last()]")!;
-                List<string>? sources = null;
                 foreach (PackageHolder package in _packages.Where(p => string.IsNullOrEmpty(p.Source)))
                 {
                     nav.AppendChild(@$"<PackageReference Include=""{package.Name}"" Version=""{package.Version}"" />");
                 }
-            }
-            if (_packages.Any(p => !string.IsNullOrEmpty(p.Source)))
-            {
-                XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!;
-                nav.AppendChild("<ItemGroup/>");
-                nav = nav.SelectSingleNode("ItemGroup[last()]")!;
-                string packages = Path.Combine(ProjectDir, "packages");
-                if (!Directory.Exists(packages))
+                if (_packages.Any(p => !string.IsNullOrEmpty(p.Source)))
                 {
-                    Directory.CreateDirectory(packages);
-                }
-                foreach (PackageHolder package in _packages.Where(p => !string.IsNullOrEmpty(p.Source)))
-                {
-                    string targetPackage = Path.Combine(packages, $"{package.Name}.{package.Version}");
-                    if (!Directory.Exists(targetPackage))
+                    string packages = Path.Combine(ProjectDir, "packages");
+                    if (!Directory.Exists(packages))
                     {
-                        Directory.CreateDirectory(targetPackage);
+                        Directory.CreateDirectory(packages);
                     }
-                    foreach (string file in Directory.GetFiles(package.Source!))
+                    foreach (PackageHolder package in _packages.Where(p => !string.IsNullOrEmpty(p.Source)))
                     {
-                        string targetFile = Path.Combine(targetPackage, Path.GetFileName(file));
-                        if (!File.Exists(targetFile))
+                        string targetPackage = Path.Combine(packages, $"{package.Name}.{package.Version}");
+                        if (!Directory.Exists(targetPackage))
                         {
-                            File.Copy(file, targetFile);
-                            nav.AppendChild(@$"<Content Include=""{targetFile}"">
-    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
-    <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-</Content>");
+                            Directory.CreateDirectory(targetPackage);
+                        }
+                        foreach (string file in Directory.GetFiles(package.Source!))
+                        {
+                            if (nav.SelectSingleNode($"Reference[@Include='{Path.GetFileName(file)}']") is null)
+                            {
+                                nav.AppendChild(@$"<Reference Include=""{file}""/>");
+                            }
                         }
                     }
                 }
@@ -568,14 +581,14 @@ public class Project : IDisposable
                 Console.Error.WriteLine(e.Data);
             }
         };
-        dotnet.OutputDataReceived += (s, e) => 
-        { 
+        dotnet.OutputDataReceived += (s, e) =>
+        {
             sbData.AppendLine(e.Data);
             if (IsVerbose)
             {
                 Console.Out.WriteLine(e.Data);
             }
-            if(ThrowAtBuildWarnings && !throwAtWarnings && !string.IsNullOrEmpty(e.Data) && Regex.IsMatch(e.Data, "\\:\\swarning\\sCS\\d{4}:"))
+            if (ThrowAtBuildWarnings && !throwAtWarnings && !string.IsNullOrEmpty(e.Data) && Regex.IsMatch(e.Data, "\\:\\swarning\\sCS\\d{4}:"))
             {
                 throwAtWarnings = true;
             }
@@ -593,7 +606,7 @@ public class Project : IDisposable
         {
             throw new InvalidOperationException($"Ended with errors: {(IsVerbose ? $"`dotnet {arguments}`" : LastBuildLog)}");
         }
-        if (throwAtWarnings) 
+        if (throwAtWarnings)
         {
             throw new InvalidOperationException($"Ended with warnings {(IsVerbose ? $"`dotnet {arguments}`" : LastBuildLog)}");
         }

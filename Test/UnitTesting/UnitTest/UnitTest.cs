@@ -10,7 +10,7 @@ namespace Net.Leksi.Rac.UnitTesting;
 
 public class Tests
 {
-    const int s_maxLevel = 2;
+    const int s_maxLevel = 4;
     const int s_numTreeChildren = 3;
     const int s_numOtherProperties = 3;
     const int s_isPackableBase = 1;
@@ -171,11 +171,6 @@ class Factory: IFactory
             node.Project.AddProject(Path.Combine(projectDir, "..", s_external, $"{s_external}.csproj"));
             ArgumentException ex3 = Assert.Throws<ArgumentException>(() => node.Project.AddProject(Path.Combine(projectDir, "..", s_external, $"{s_external}.csproj")));
             Assert.That(ex3.Message, Is.EqualTo($"Project {Path.Combine(projectDir, "..", s_external, $"{s_external}.csproj")} is already added!"));
-        }
-
-        foreach (Node node in nodes)
-        {
-            Console.WriteLine($"{node.Project!.FullName}: {node.Label}");
         }
 
         foreach (Node node in nodes.Where(n => n.IsPackable))
