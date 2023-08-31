@@ -8,5 +8,6 @@
     <AssemblyName>Net.Leksi.Rac.UnitTesting.Fixed</AssemblyName>
     <IsPackable>False</IsPackable>
     <GeneratePackageOnBuild>False</GeneratePackageOnBuild>
+    <Configurations>Debug;Release;RAC</Configurations>
   </PropertyGroup>
 </Project>

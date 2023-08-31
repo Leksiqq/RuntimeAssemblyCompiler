@@ -254,13 +254,8 @@ public class Project : IDisposable
         {
             project.OnProjectFileGenerated = options.OnProjectFileGenerated;
         }
-        project._outDir = Path.Combine(project.ProjectDir, "bin", project.Configuration, project.TargetFramework);
         project.ProjectPath = Path.Combine(project.ProjectDir, $"{project.Name}.csproj");
         project._lockFile = Path.Combine(project.ProjectDir, ".lock");
-        if (File.Exists(project._lockFile))
-        {
-            File.Delete(project._lockFile);
-        }
         return project;
     }
 
@@ -323,8 +318,8 @@ public class Project : IDisposable
 
     public string? GetLibraryFile(Project project)
     {
-        string result = Path.Combine(_outDir!, $"{project.FullName}.dll");
-        return File.Exists(result) ? result : null;
+        string? result = _outDir is { } ? Path.Combine(_outDir!, $"{project.FullName}.dll") : null;
+        return result is { } && File.Exists(result) ? result : null;
     }
 
     public string? GetPackageFile(Project project)
@@ -361,13 +356,15 @@ public class Project : IDisposable
 
     public void Compile()
     {
+        DeleteLockFile();
+
         LastBuildLog = string.Empty;
 
         _allContents = new HashSet<string>();
 
         GenerateProjectFile(this);
 
-        RunDotnet($"build \"{ProjectPath}\" --configuration {Configuration}{(!string.IsNullOrEmpty(AdditionalDotnetOptions) ? $" {AdditionalDotnetOptions}" : string.Empty)}");
+        RunDotnet($"build \"{ProjectPath}\" --configuration \"{Configuration}\"{(!string.IsNullOrEmpty(AdditionalDotnetOptions) ? $" {AdditionalDotnetOptions}" : string.Empty)}");
 
         LibraryFile = Path.Combine(_outDir!, $"{FullName}.dll");
         if (OutputType is OutputType.Exe || OutputType is OutputType.WinExe)
@@ -383,6 +380,21 @@ public class Project : IDisposable
             else
             {
                 AssemblyLoadContext.Default.LoadFromAssemblyPath(GetLibraryFile(ph.Path!)!);
+            }
+        }
+    }
+
+    private void DeleteLockFile()
+    {
+        if (File.Exists(_lockFile))
+        {
+            File.Delete(_lockFile);
+        }
+        foreach (ProjectHolder ph in _projects)
+        {
+            if (ph.Project is { })
+            {
+                ph.Project.DeleteLockFile();
             }
         }
     }
@@ -429,6 +441,7 @@ public class Project : IDisposable
 
     private void GenerateProjectFile(Project root)
     {
+        _outDir = Path.Combine(ProjectDir, "bin", root.Configuration, TargetFramework);
         if (!File.Exists(_lockFile))
         {
             File.WriteAllText(_lockFile, string.Empty);
@@ -446,6 +459,7 @@ public class Project : IDisposable
         <AssemblyName>{FullName}</AssemblyName>
         <IsPackable>{(GeneratePackage ? s_true : s_false)}</IsPackable>
         <GeneratePackageOnBuild>{(GeneratePackage ? s_true : s_false)}</GeneratePackageOnBuild>
+        <Configurations>{root.Configuration}</Configurations>
     </PropertyGroup>
 </Project>");
             if (_symbols.Any())
@@ -498,6 +512,8 @@ public class Project : IDisposable
                     }
                     else
                     {
+                        UpdateConfigurations(project.Path, root.Configuration);
+
                         nav.AppendChild(@$"<ProjectReference Include=""{project.Path}"" />");
                     }
                 }
@@ -558,10 +574,39 @@ public class Project : IDisposable
         }
     }
 
+    private static void UpdateConfigurations(string path, string configuration)
+    {
+        XmlWriterSettings xws = new()
+        {
+            Indent = true,
+        };
+        XmlDocument xml = new();
+        xml.Load(path);
+
+        XPathNavigator nav = xml.CreateNavigator()!;
+
+        if (nav.SelectSingleNode("/Project/PropertyGroup[Configurations]/Configurations") is not XPathNavigator nav1)
+        {
+            nav.SelectSingleNode("/Project/PropertyGroup[1]")!.AppendChild($"<Configurations>Debug;Release;{configuration}</Configurations>");
+        }
+        else if (!nav1.Value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Contains(configuration))
+        {
+            nav1.SetValue($"{nav1.Value};{configuration}");            
+        }
+        XmlWriter xw = XmlWriter.Create(path, xws);
+        xml.WriteTo(xw);
+        xw.Close();
+    }
+
     private void RunDotnet(string arguments)
     {
         StringBuilder sbError = new();
         StringBuilder sbData = new();
+
+        if (IsVerbose)
+        {
+            Console.Out.WriteLine(arguments);
+        }
 
         Process dotnet = new();
 

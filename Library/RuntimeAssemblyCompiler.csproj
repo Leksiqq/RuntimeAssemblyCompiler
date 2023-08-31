@@ -6,7 +6,10 @@
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RuntimeAssemblyCompiler</AssemblyName>
     <RootNamespace>Net.Leksi.RuntimeAssemblyCompiler</RootNamespace>
-    <PackageReleaseNotes>1.3.0 Добавлена возможность получить абсолютный путь к сгенериррованному файлу проекта.
+    <PackageReleaseNotes>1.3.6 Исправлены найденные ошибки.
+      1.3.6 Found bugs fixed.
+
+      1.3.0 Добавлена возможность получить абсолютный путь к сгенериррованному файлу проекта.
       Добавлена возможность установить обработчик события, что файл проекта сгенерирован, так что есть возможность
       обработать его дополнительно перед компиляцией.
       Исправлены найденные ошибки.
@@ -49,12 +52,13 @@
       1.0.37 Добавлены методы, чтобы определить или отменить определение символов для условной компиляции.
       1.0.37 A possibility to define or undefine symbols for conditional compilation added.</PackageReleaseNotes>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Configurations>Release</Configurations>
   </PropertyGroup>
   <Choose>
     <When Condition=" '$(Configuration)'=='Release' ">
       <PropertyGroup>
         <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-        <Version>1.3.0</Version>
+        <Version>1.3.6</Version>
         <Authors>leksiq</Authors>
         <Title>Runtime Assembly Compiler</Title>
         <Description>
