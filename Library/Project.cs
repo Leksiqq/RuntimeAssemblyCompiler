@@ -25,6 +25,7 @@ public class Project : IDisposable
 
     private readonly List<PackageHolder> _packages = new();
     private readonly List<ProjectHolder> _projects = new();
+    private readonly List<string> _references = new();
     private readonly List<string> _contents = new();
     private HashSet<string>? _allContents = null;
     private HashSet<string> _symbols = new();
@@ -309,11 +310,53 @@ public class Project : IDisposable
 
     public void AddContent(string path)
     {
+        path = Path.GetFullPath(path);
         if (_contents.Contains(path))
         {
             throw new ArgumentException($"Content {path} is already added!");
         }
         _contents.Add(path);
+    }
+
+    public void AddReference(string path)
+    {
+        path = Path.GetFullPath(path);
+        if (_references.Contains(path))
+        {
+            throw new ArgumentException($"Reference {path} is already added!");
+        }
+        _references.Add(path);
+    }
+
+    public bool ContainsReference(string path)
+    {
+        return _references.Contains(Path.GetFullPath(path));
+    }
+
+    public bool ContainsContent(string path)
+    {
+        return _contents.Contains(Path.GetFullPath(path));
+    }
+
+    public bool ContainsProject(string path)
+    {
+        path = Path.GetFullPath(path);
+        return _projects.Any(p => path.Equals(p.Path));
+    }
+
+    public bool ContainsProject(Project project)
+    {
+        return _projects.Any(p => project == p.Project);
+    }
+
+    public bool ContainsPackage(string name)
+    {
+        return _packages.Any(p => name.Equals(p.Name));
+    }
+
+    public bool ContainsPackage(Project project)
+    {
+        return ContainsPackage(project.FullName);
     }
 
     public string? GetLibraryFile(Project project)
@@ -549,6 +592,16 @@ public class Project : IDisposable
                             }
                         }
                     }
+                }
+            }
+            if (_references.Any())
+            {
+                XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!;
+                nav.AppendChild("<ItemGroup/>");
+                nav = nav.SelectSingleNode("ItemGroup[last()]")!;
+                foreach (string reference in _references)
+                {
+                    nav.AppendChild(@$"<Reference Include=""{reference}"" />");
                 }
             }
             if (!string.IsNullOrEmpty(NoWarn))
