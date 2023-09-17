@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.Loader;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -9,6 +10,8 @@ namespace Net.Leksi.RuntimeAssemblyCompiler;
 
 public class Project : IDisposable
 {
+    public event MissedTypeEventHandler? MissedType;
+
     private const string s_defaultSdk = "Microsoft.NET.Sdk";
 
     private static string? s_appDataDirectory;
@@ -22,13 +25,18 @@ public class Project : IDisposable
     private const string s_false = "False";
     private const string s_version = "1.0.0";
     private const string s_disposedFile = ".disposed";
-
+    private const string s_missedTypeCode = "CS0246";
+    private const string s_missedTypePattern = @"""(?<type>[^""]+)""";
+    private const string s_suggestAssemblyCode = "CS0012";
+    private const string s_suggestAssemblyPattern = @"""(?<type>[^""]+)""[^""]+""(?<assembly>[^""]+)""";
+    private const string s_bugPattern = @"(?<file>[^(]+)\(\d+,\d+\)\:\s(?<kind>warning|error)\s(?<code>CS\d{4}):";
     private readonly List<PackageHolder> _packages = new();
     private readonly List<ProjectHolder> _projects = new();
     private readonly List<string> _references = new();
     private readonly List<string> _contents = new();
     private HashSet<string>? _allContents = null;
     private HashSet<string> _symbols = new();
+    private readonly ProjectHolder _thisProjectHolder;
 
     private string _lockFile = string.Empty;
     private string _outDir = null!;
@@ -469,7 +477,10 @@ public class Project : IDisposable
         }
     }
 
-    private Project() { }
+    private Project()
+    {
+        _thisProjectHolder = new ProjectHolder { Project = this };
+    }
 
     private static string GetTemporaryDirectory()
     {
@@ -537,27 +548,27 @@ public class Project : IDisposable
                 XPathNavigator nav = xml.DocumentElement!.CreateNavigator()!;
                 nav.AppendChild("<ItemGroup/>");
                 nav = nav.SelectSingleNode("ItemGroup[last()]")!;
-                foreach (ProjectHolder project in _projects)
+                foreach (ProjectHolder ph in _projects)
                 {
-                    if (project.Project is { })
+                    if (ph.Project is { })
                     {
-                        if (!File.Exists(project.Project._lockFile))
+                        if (!File.Exists(ph.Project._lockFile))
                         {
-                            project.Project.TargetFramework = TargetFramework;
-                            project.Project.Configuration = Configuration;
-                            project.Project.IsVerbose = IsVerbose;
-                            project.Project.LogEncoding = LogEncoding;
+                            ph.Project.TargetFramework = TargetFramework;
+                            ph.Project.Configuration = Configuration;
+                            ph.Project.IsVerbose = IsVerbose;
+                            ph.Project.LogEncoding = LogEncoding;
                         }
 
-                        project.Project.GenerateProjectFile(root);
+                        ph.Project.GenerateProjectFile(root);
 
-                        nav.AppendChild(@$"<ProjectReference Include=""{project.Project.ProjectPath}"" />");
+                        nav.AppendChild(@$"<ProjectReference Include=""{ph.Project.ProjectPath}"" />");
                     }
                     else
                     {
-                        UpdateConfigurations(project.Path, root.Configuration);
+                        UpdateConfigurations(ph.Path, root.Configuration);
 
-                        nav.AppendChild(@$"<ProjectReference Include=""{project.Path}"" />");
+                        nav.AppendChild(@$"<ProjectReference Include=""{ph.Path}"" />");
                     }
                 }
             }
@@ -620,7 +631,7 @@ public class Project : IDisposable
             {
                 if (IsVerbose)
                 {
-                    Console.WriteLine($"Temporary project {Name} was created at {ProjectDir}.");
+                    Console.WriteLine($"Temporary ph {Name} was created at {ProjectDir}.");
                 }
             }
             root.OnProjectFileGenerated?.Invoke(this);
@@ -644,7 +655,7 @@ public class Project : IDisposable
         }
         else if (!nav1.Value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Contains(configuration))
         {
-            nav1.SetValue($"{nav1.Value};{configuration}");            
+            nav1.SetValue($"{nav1.Value};{configuration}");
         }
         XmlWriter xw = XmlWriter.Create(path, xws);
         xml.WriteTo(xw);
@@ -656,14 +667,18 @@ public class Project : IDisposable
         StringBuilder sbError = new();
         StringBuilder sbData = new();
 
+        Process dotnet = new();
+
+        bool throwAtWarnings = false;
+
+        int step = 0;
+        bool running = true;
+
+
         if (IsVerbose)
         {
             Console.Out.WriteLine(arguments);
         }
-
-        Process dotnet = new();
-
-        bool throwAtWarnings = false;
 
         dotnet.StartInfo = new()
         {
@@ -682,6 +697,7 @@ public class Project : IDisposable
         {
             dotnet.StartInfo.EnvironmentVariables.Add("DOTNET_CLI_UI_LANGUAGE", BuildOutputLang);
         }
+
         dotnet.ErrorDataReceived += (s, e) =>
         {
             sbError.AppendLine(e.Data);
@@ -697,29 +713,129 @@ public class Project : IDisposable
             {
                 Console.Out.WriteLine(e.Data);
             }
-            if (ThrowAtBuildWarnings && !throwAtWarnings && !string.IsNullOrEmpty(e.Data) && Regex.IsMatch(e.Data, "\\:\\swarning\\sCS\\d{4}:"))
+            if (!string.IsNullOrEmpty(e.Data) && Regex.Match(e.Data, s_bugPattern) is Match match && match.Success)
             {
-                throwAtWarnings = true;
+                if (match.Groups["kind"].Value.Equals("warning"))
+                {
+                    if (ThrowAtBuildWarnings)
+                    {
+                        throwAtWarnings = true;
+                    }
+                }
+                else if (match.Groups["kind"].Value.Equals("error"))
+                {
+                    if (
+                        match.Groups["code"].Value.Equals(s_missedTypeCode)
+                        && step == 0
+                    )
+                    {
+                        running = true;
+
+                        string file = match.Groups["file"].Value;
+                        if (
+                            Regex.Match(e.Data, s_missedTypePattern) is Match match1
+                            && match1.Success
+                        )
+                        {
+                            string missedType = match1.Groups["type"].Value;
+                            if (FindProjectHolderByFile(file) is ProjectHolder ph)
+                            {
+                                ph.SuggestedAssemblies.TryAdd(missedType, null);
+                            }
+                        }
+                        else if (
+                            Regex.Match(e.Data, s_suggestAssemblyPattern) is Match match2
+                            && match2.Success
+                        )
+                        {
+                            string missedType = match2.Groups["type"].Value;
+                            string suggestedAssembly = match2.Groups["assembly"].Value;
+                            if (
+                                FindProjectHolderByFile(file) is ProjectHolder ph
+                                && (
+                                    !ph.SuggestedAssemblies.ContainsKey(missedType)
+                                    || ph.SuggestedAssemblies[missedType] is null
+                                )
+                            )
+                            {
+                                try
+                                {
+                                    Assembly ass = Assembly.Load(suggestedAssembly);
+                                    if (!ph.SuggestedAssemblies.ContainsKey(missedType))
+                                    {
+                                        ph.SuggestedAssemblies.Add(missedType, ass);
+                                    }
+                                    else
+                                    {
+                                        ph.SuggestedAssemblies[missedType] = ass;
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+                }
             }
         };
 
-        dotnet.Start();
-        dotnet.BeginErrorReadLine();
-        dotnet.BeginOutputReadLine();
-
-        dotnet.WaitForExit();
-
-        LastBuildLog = $"`dotnet {arguments}`\n{sbData}\n{sbError}";
-
-        if (dotnet.ExitCode != 0)
+        while(running)
         {
-            throw new InvalidOperationException($"Ended with errors: {(IsVerbose ? $"`dotnet {arguments}`" : LastBuildLog)}");
+            running = false;
+            sbError.Clear();
+            sbData.Clear();
+
+            dotnet.Start();
+            dotnet.BeginErrorReadLine();
+            dotnet.BeginOutputReadLine();
+
+            dotnet.WaitForExit();
+            dotnet.CancelErrorRead();
+            dotnet.CancelOutputRead();
+
+            LastBuildLog = $"`dotnet {arguments}`\n{sbData}\n{sbError}";
+
+            if (dotnet.ExitCode != 0)
+            {
+                bool done = false;
+                foreach (ProjectHolder ph in _projects.Concat(new ProjectHolder[] { _thisProjectHolder }))
+                {
+                    foreach(KeyValuePair<string, Assembly?> entry in ph.SuggestedAssemblies.Where(e => e.Value is null))
+                    {
+                        MissedTypeEventArgs args = new MissedTypeEventArgs { MissedTypeName = entry.Key, Project = ph.Project! };
+                        MissedType?.Invoke(args);
+                        if(args.Assembly is { })
+                        {
+                            ph.SuggestedAssemblies[entry.Key] = args.Assembly;
+                            done = true;
+                        }
+                    }
+                    foreach (var g in ph.SuggestedAssemblies.Values.Where(v => v is { }).GroupBy(v => v))
+                    {
+                        ph.Project!.AddReference(g.Key!.Location);
+                    }
+                }
+                if (!done)
+                {
+                    throw new InvalidOperationException($"Ended with errors: {(IsVerbose ? $"`dotnet {arguments}`" : LastBuildLog)}");
+                }
+            }
+            ++step;
         }
+        
         if (throwAtWarnings)
         {
             throw new InvalidOperationException($"Ended with warnings {(IsVerbose ? $"`dotnet {arguments}`" : LastBuildLog)}");
         }
     }
 
+    private ProjectHolder? FindProjectHolderByFile(string file)
+    {
+        return _projects.Concat(new ProjectHolder[] { _thisProjectHolder }).Where(
+            p => (
+                p.Project is { }
+                && file.StartsWith(p.Project.ProjectDir)
+            )
+        ).FirstOrDefault();
+    }
 
 }
