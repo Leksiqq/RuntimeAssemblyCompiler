@@ -374,7 +374,7 @@ class Factory: IFactory
             node.Project.AddContent($"{node.Project.FullName}.magic.txt");
 
             ArgumentException? ex7 = Assert.Throws<ArgumentException>(() => node.Project.AddContent($"{node.Project.FullName}.magic.txt"));
-            Assert.That(ex7.Message, Is.EqualTo($"Content {node.Project.FullName}.magic.txt is already added!"));
+            Assert.That(ex7.Message, Is.EqualTo($"Content {Path.Combine(node.Project.ProjectDir, $"{node.Project.FullName}.magic.txt")} is already added!"));
 
             FileStream fileStream = File.Create(Path.Combine(node.Project.ProjectDir!, $"{node.ClassName}.cs"));
             StreamWriter sw = new(fileStream);

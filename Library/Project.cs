@@ -299,7 +299,10 @@ public class Project : IDisposable
 
     public void AddProject(string path)
     {
-        path = Path.GetFullPath(path);
+        if (!path.Equals(Path.GetFullPath(path)))
+        {
+            path = Path.GetFullPath(Path.Combine(ProjectDir, path));
+        }
         if (_projects.Any(p => path.Equals(p.Path)))
         {
             throw new ArgumentException($"Project {path} is already added!");
@@ -318,7 +321,10 @@ public class Project : IDisposable
 
     public void AddContent(string path)
     {
-        path = Path.GetFullPath(path);
+        if (!path.Equals(Path.GetFullPath(path)))
+        {
+            path = Path.GetFullPath(Path.Combine(ProjectDir, path));
+        }
         if (_contents.Contains(path))
         {
             throw new ArgumentException($"Content {path} is already added!");
@@ -328,7 +334,10 @@ public class Project : IDisposable
 
     public void AddReference(string path)
     {
-        path = Path.GetFullPath(path);
+        if (!path.Equals(Path.GetFullPath(path)))
+        {
+            path = Path.GetFullPath(Path.Combine(ProjectDir, path));
+        }
         if (_references.Contains(path))
         {
             throw new ArgumentException($"Reference {path} is already added!");
@@ -407,15 +416,26 @@ public class Project : IDisposable
 
     public void Compile()
     {
-        DeleteLockFile();
+        for (int i = 0; i < 2; ++i)
+        {
+            DeleteLockFile();
 
-        LastBuildLog = string.Empty;
+            LastBuildLog = string.Empty;
 
-        _allContents = new HashSet<string>();
+            _allContents = new HashSet<string>();
 
-        GenerateProjectFile(this);
+            GenerateProjectFile(this);
 
-        RunDotnet($"build \"{ProjectPath}\" --configuration \"{Configuration}\"{(!string.IsNullOrEmpty(AdditionalDotnetOptions) ? $" {AdditionalDotnetOptions}" : string.Empty)}");
+            if (
+                RunDotnet(
+                    $"build \"{ProjectPath}\" --configuration \"{Configuration}\"{(!string.IsNullOrEmpty(AdditionalDotnetOptions) ? $" {AdditionalDotnetOptions}" : string.Empty)}",
+                    i == 0
+                )
+            )
+            {
+                break;
+            }
+        }
 
         LibraryFile = Path.Combine(_outDir!, $"{FullName}.dll");
         if (OutputType is OutputType.Exe || OutputType is OutputType.WinExe)
@@ -662,7 +682,7 @@ public class Project : IDisposable
         xw.Close();
     }
 
-    private void RunDotnet(string arguments)
+    private bool RunDotnet(string arguments, bool askMissedTypes = false)
     {
         StringBuilder sbError = new();
         StringBuilder sbData = new();
@@ -670,10 +690,6 @@ public class Project : IDisposable
         Process dotnet = new();
 
         bool throwAtWarnings = false;
-
-        int step = 0;
-        bool running = true;
-
 
         if (IsVerbose)
         {
@@ -724,16 +740,27 @@ public class Project : IDisposable
                 }
                 else if (match.Groups["kind"].Value.Equals("error"))
                 {
+                    string file = match.Groups["file"].Value;
+                    string code = match.Groups["code"].Value;
+                    int selector = 0;
                     if (
-                        match.Groups["code"].Value.Equals(s_missedTypeCode)
-                        && step == 0
+                        askMissedTypes
+                        && (
+                            (
+                                code.Equals(s_missedTypeCode)
+                                && (selector = 1) == selector
+                            )
+                            || (
+                                code.Equals(s_suggestAssemblyCode)
+                                && (selector = 2) == selector
+                            )
+                        )
                     )
                     {
-                        running = true;
 
-                        string file = match.Groups["file"].Value;
                         if (
-                            Regex.Match(e.Data, s_missedTypePattern) is Match match1
+                            selector == 1
+                            && Regex.Match(e.Data, s_missedTypePattern) is Match match1
                             && match1.Success
                         )
                         {
@@ -744,7 +771,8 @@ public class Project : IDisposable
                             }
                         }
                         else if (
-                            Regex.Match(e.Data, s_suggestAssemblyPattern) is Match match2
+                            selector == 2
+                            && Regex.Match(e.Data, s_suggestAssemblyPattern) is Match match2
                             && match2.Success
                         )
                         {
@@ -778,54 +806,59 @@ public class Project : IDisposable
             }
         };
 
-        while(running)
+        sbError.Clear();
+        sbData.Clear();
+
+        dotnet.Start();
+        dotnet.BeginErrorReadLine();
+        dotnet.BeginOutputReadLine();
+
+        dotnet.WaitForExit();
+        dotnet.CancelErrorRead();
+        dotnet.CancelOutputRead();
+
+        LastBuildLog = $"`dotnet {arguments}`\n{sbData}\n{sbError}";
+
+        if (dotnet.ExitCode != 0)
         {
-            running = false;
-            sbError.Clear();
-            sbData.Clear();
-
-            dotnet.Start();
-            dotnet.BeginErrorReadLine();
-            dotnet.BeginOutputReadLine();
-
-            dotnet.WaitForExit();
-            dotnet.CancelErrorRead();
-            dotnet.CancelOutputRead();
-
-            LastBuildLog = $"`dotnet {arguments}`\n{sbData}\n{sbError}";
-
-            if (dotnet.ExitCode != 0)
+            bool changed = false;
+            foreach (ProjectHolder ph in _projects.Concat(new ProjectHolder[] { _thisProjectHolder }))
             {
-                bool done = false;
-                foreach (ProjectHolder ph in _projects.Concat(new ProjectHolder[] { _thisProjectHolder }))
+                foreach (KeyValuePair<string, Assembly?> entry in ph.SuggestedAssemblies.Where(e => e.Value is null))
                 {
-                    foreach(KeyValuePair<string, Assembly?> entry in ph.SuggestedAssemblies.Where(e => e.Value is null))
+                    MissedTypeEventArgs args = new MissedTypeEventArgs { MissedTypeName = entry.Key, Project = ph.Project! };
+                    ph.Project!.MissedType?.Invoke(args);
+                    if(args.Assembly is null && this != ph.Project)
                     {
-                        MissedTypeEventArgs args = new MissedTypeEventArgs { MissedTypeName = entry.Key, Project = ph.Project! };
                         MissedType?.Invoke(args);
-                        if(args.Assembly is { })
-                        {
-                            ph.SuggestedAssemblies[entry.Key] = args.Assembly;
-                            done = true;
-                        }
                     }
-                    foreach (var g in ph.SuggestedAssemblies.Values.Where(v => v is { }).GroupBy(v => v))
+                    if (args.Assembly is { })
                     {
-                        ph.Project!.AddReference(g.Key!.Location);
+                        ph.SuggestedAssemblies[entry.Key] = args.Assembly;
+                        changed = true;
                     }
                 }
-                if (!done)
+                foreach (var g in ph.SuggestedAssemblies.Values.Where(v => v is { }).GroupBy(v => v))
                 {
-                    throw new InvalidOperationException($"Ended with errors: {(IsVerbose ? $"`dotnet {arguments}`" : LastBuildLog)}");
+                    ph.Project!.AddReference(g.Key!.Location);
+                    changed = true;
                 }
             }
-            ++step;
+            if (!changed)
+            {
+                throw new InvalidOperationException($"Ended with errors: {(IsVerbose ? $"`dotnet {arguments}`" : LastBuildLog)}");
+            }
+            if (askMissedTypes)
+            {
+                return false;
+            }
         }
-        
+
         if (throwAtWarnings)
         {
             throw new InvalidOperationException($"Ended with warnings {(IsVerbose ? $"`dotnet {arguments}`" : LastBuildLog)}");
         }
+        return true;
     }
 
     private ProjectHolder? FindProjectHolderByFile(string file)

@@ -10,6 +10,10 @@ All classes are contained in the `Net.Leksi.RuntimeAssemblyCompiler` namespace.
 
 [OutputType](https://github.com/Leksiqq/RuntimeAssemblyCompiler/wiki/OutputType-en) - an enumeration whose elements correspond to the values of the property of the same name in the project file.
 
+[MissedTypeEventArgs](https://github.com/Leksiqq/RuntimeAssemblyCompiler/wiki/MissedTypeEventArgs-en) - Event handler argument for [Project](https://github.com/Leksiqq/RuntimeAssemblyCompiler/wiki/Project-en).MissedType.
+
+[MissedTypeEventHandler](https://github.com/Leksiqq/RuntimeAssemblyCompiler/wiki/MissedTypeEventHandler-en) - Event handler for [Project](https://github.com/Leksiqq/RuntimeAssemblyCompiler/wiki/Project-en).MissedType.
+
 **Important:** the **.NET SDK** must be installed to work with the library!
 
 It is also proposed to familiarize yourself with the demonstration projects:
