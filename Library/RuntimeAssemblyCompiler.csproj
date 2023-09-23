@@ -6,7 +6,10 @@
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RuntimeAssemblyCompiler</AssemblyName>
     <RootNamespace>Net.Leksi.RuntimeAssemblyCompiler</RootNamespace>
-    <PackageReleaseNotes>      1.5.1 Добавлена функциональность для запроса во время компиляции недостающих ссылок на библиотеки.
+    <PackageReleaseNotes>      1.5.2 Исправлена ошибка, связанная с возможным добавлением неуникальной ссылки.
+      1.5.2 Fixed a bug related to the possible addition of a non-unique reference.
+      
+      1.5.1 Добавлена функциональность для запроса во время компиляции недостающих ссылок на библиотеки.
       Исправлены ошибки добавления ссылок и содержимого относительными путями.
       1.5.1 Added functionality to query during compilation for missing library references.
       Fixed bugs when adding references and contents using relative paths.
@@ -70,7 +73,7 @@
     <When Condition=" '$(Configuration)'=='Release' ">
       <PropertyGroup>
         <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-        <Version>1.5.1</Version>
+        <Version>1.5.2</Version>
         <Authors>leksiq</Authors>
         <Title>Runtime Assembly Compiler</Title>
         <Description>

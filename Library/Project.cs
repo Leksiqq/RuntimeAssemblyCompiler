@@ -840,8 +840,11 @@ public class Project : IDisposable
                 }
                 foreach (var g in ph.SuggestedAssemblies.Values.Where(v => v is { }).GroupBy(v => v))
                 {
-                    ph.Project!.AddReference(g.Key!.Location);
-                    changed = true;
+                    if (!ph.Project!.ContainsReference(g.Key!.Location))
+                    {
+                        ph.Project!.AddReference(g.Key!.Location);
+                        changed = true;
+                    }
                 }
             }
             if (!changed)
