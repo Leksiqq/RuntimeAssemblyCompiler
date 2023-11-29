@@ -15,7 +15,7 @@ internal class Program
         {
             Name = "Server",
             Sdk = "Microsoft.NET.Sdk.Web",
-            TargetFramework = "net6.0-windows7.0",
+            TargetFramework = "net8.0-windows",
             BuildOutputLang = "FR-fr",
         });
         server.IsVerbose = true;
@@ -39,7 +39,7 @@ public class Server: IServer
         {
             Name = "Config",
             Sdk = "Microsoft.NET.Sdk.Web",
-            TargetFramework = "net6.0-windows7.0",
+            TargetFramework = "net8.0-windows",
         });
         File.WriteAllText(Path.Combine(config.ProjectDir, "Configure.cs"), @"
 using System.Reflection;

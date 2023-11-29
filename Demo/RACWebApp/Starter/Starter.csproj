@@ -2,18 +2,13 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net6.0-windows</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RACWebApp.Starter</AssemblyName>
     <RootNamespace>Net.Leksi.RACWebApp.Starter</RootNamespace>
     <CommonPackageName>Net.Leksi.RACWebApp.Common</CommonPackageName>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Net.Leksi.RACWebApp.Common" Version="1.0.17" />
-    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="1.5.2" />
-  </ItemGroup>
 
   <Target Name="BuildCommon" BeforeTargets="PreBuild">
     <Message Text="$(Configuration)" />
@@ -39,5 +34,10 @@
     <Exec Command="del $(TargetDir)$(CommonPackageName).*.nupkg" />
     <Exec Command="copy $(CommonPackageName).$(CommonPackageVersion).nupkg $(TargetDir)" />
   </Target>
+  
+  <ItemGroup>
+    <PackageReference Include="Net.Leksi.RACWebApp.Common" Version="1.0.18" />
+    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="1.5.3" />
+  </ItemGroup>
 
 </Project>
