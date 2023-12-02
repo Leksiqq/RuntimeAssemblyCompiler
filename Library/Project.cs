@@ -453,6 +453,10 @@ public class Project : IDisposable
                 AssemblyLoadContext.Default.LoadFromAssemblyPath(GetLibraryFile(ph.Path!)!);
             }
         }
+        foreach(string refr in _references)
+        {
+            AssemblyLoadContext.Default.LoadFromAssemblyPath(refr);
+        }
     }
 
     private void DeleteLockFile()
@@ -584,7 +588,7 @@ public class Project : IDisposable
 
                         nav.AppendChild(@$"<ProjectReference Include=""{ph.Project.ProjectPath}"" />");
                     }
-                    else
+                    else if(!string.IsNullOrEmpty(ph.Path))
                     {
                         UpdateConfigurations(ph.Path, root.Configuration);
 
