@@ -78,7 +78,7 @@
     <When Condition=" '$(Configuration)'=='Release' ">
       <PropertyGroup>
         <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-        <Version>2.0.0</Version>
+        <Version>2.0.1</Version>
         <Authors>leksiq</Authors>
         <Title>Runtime Assembly Compiler</Title>
         <Description>
