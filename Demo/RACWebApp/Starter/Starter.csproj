@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFrameworks>net6.0-windows;net8.0-windows</TargetFrameworks>
+    <TargetFrameworks>net8.0-windows;net6.0-windows</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RACWebApp.Starter</AssemblyName>
@@ -37,7 +37,7 @@
   
   <ItemGroup>
     <PackageReference Include="Net.Leksi.RACWebApp.Common" Version="1.0.21" />
-    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="2.0.1" />
+    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="2.0.4" />
   </ItemGroup>
 
 </Project>

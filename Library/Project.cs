@@ -112,15 +112,27 @@ public class Project : IDisposable
         { 
             return AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(_outDir, $"{FullName}.dll"));
         } 
-    } 
+    }
 
     public string? ExeFile
     {
         get
         {
-            if(OutputType is OutputType.Exe || OutputType is OutputType.WinExe)
+            if (OutputType is OutputType.Exe || OutputType is OutputType.WinExe)
             {
                 return Path.Combine(_outDir, $"{FullName}.exe");
+            }
+            return null;
+        }
+    }
+
+    public string? PackageFile
+    {
+        get
+        {
+            if (GeneratePackage)
+            {
+                return Path.Combine(_outDir, $"{FullName}.{s_version}.nupkg");
             }
             return null;
         }
