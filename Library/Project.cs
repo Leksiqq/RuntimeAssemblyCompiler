@@ -110,9 +110,21 @@ public class Project : IDisposable
     public Assembly? CompiledAssembly { 
         get 
         { 
-            return AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(_outDir, $"{FullName}.{(OutputType is OutputType.Library ? "dll" : "exe")}"));
+            return AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(_outDir, $"{FullName}.dll"));
         } 
     } 
+
+    public string? ExeFile
+    {
+        get
+        {
+            if(OutputType is OutputType.Exe || OutputType is OutputType.WinExe)
+            {
+                return Path.Combine(_outDir, $"{FullName}.exe");
+            }
+            return null;
+        }
+    }
 
     static Project()
     {
@@ -154,10 +166,6 @@ public class Project : IDisposable
         }
         s_projectCreated = true;
 
-        string name = string.Empty;
-        string @namespace = string.Empty;
-
-
         Project project = new()
         {
             Sdk = options.Sdk ?? s_defaultSdk,
@@ -186,6 +194,7 @@ public class Project : IDisposable
     {
         if (!string.IsNullOrEmpty(options.FullName))
         {
+            FullName = options.FullName;
             int pos = options.FullName.LastIndexOf('.');
             if (pos == 0)
             {
@@ -199,6 +208,7 @@ public class Project : IDisposable
             else
             {
                 Name = options.FullName;
+                Namespace = string.Empty;
             }
             if (!string.IsNullOrEmpty(options.Name))
             {
@@ -227,6 +237,7 @@ public class Project : IDisposable
             }
             else
             {
+                Namespace = string.Empty;
                 FullName = options.Name;
             }
         }
@@ -431,10 +442,6 @@ public class Project : IDisposable
 
         LoadAssemblies(_outDir);
 
-        foreach(var it in AssemblyLoadContext.Default.Assemblies)
-        {
-            Console.WriteLine(it);
-        }
     }
 
     private static Project FromExisting(string projectPath, ProjectOptions? options = null)

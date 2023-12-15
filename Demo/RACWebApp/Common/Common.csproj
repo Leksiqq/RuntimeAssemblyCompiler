@@ -7,7 +7,7 @@
     <AssemblyName>Net.Leksi.RACWebApp.Common</AssemblyName>
     <RootNamespace>Net.Leksi.RACWebApp.Common</RootNamespace>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-    <Version>1.0.20</Version>
+    <Version>1.0.21</Version>
   </PropertyGroup>
   <Target Name="CopyPackage" AfterTargets="Pack">
     <Exec Command="del $(PackageId).*.nupkg" WorkingDirectory="$(MSBuildProjectDirectory)/../Starter"/>

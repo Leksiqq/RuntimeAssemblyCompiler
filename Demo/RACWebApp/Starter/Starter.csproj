@@ -36,8 +36,8 @@
   </Target>
   
   <ItemGroup>
-    <PackageReference Include="Net.Leksi.RACWebApp.Common" Version="1.0.20" />
-    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="1.5.9" />
+    <PackageReference Include="Net.Leksi.RACWebApp.Common" Version="1.0.21" />
+    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="2.0.0" />
   </ItemGroup>
 
 </Project>

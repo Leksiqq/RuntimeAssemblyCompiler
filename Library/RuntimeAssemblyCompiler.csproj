@@ -6,11 +6,14 @@
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RuntimeAssemblyCompiler</AssemblyName>
     <RootNamespace>Net.Leksi.RuntimeAssemblyCompiler</RootNamespace>
-    <PackageReleaseNotes>      1.5.4 NET8.0-windows
-      
+    <PackageReleaseNotes>      2.0.0 Проведён рефакторинг, удалено всё, что не пригодилось. Добавлена компиляция существующего проекта.
+      2.0.0 Refactoring was carried out, everything that was not useful was removed. Added compilation of an existing project.
+
+      1.5.4 NET8.0-windows
+
       1.5.2 Исправлена ошибка, связанная с возможным добавлением неуникальной ссылки.
       1.5.2 Fixed a bug related to the possible addition of a non-unique reference.
-      
+
       1.5.1 Добавлена функциональность для запроса во время компиляции недостающих ссылок на библиотеки.
       Исправлены ошибки добавления ссылок и содержимого относительными путями.
       1.5.1 Added functionality to query during compilation for missing library references.
@@ -75,7 +78,7 @@
     <When Condition=" '$(Configuration)'=='Release' ">
       <PropertyGroup>
         <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-        <Version>1.5.9</Version>
+        <Version>2.0.0</Version>
         <Authors>leksiq</Authors>
         <Title>Runtime Assembly Compiler</Title>
         <Description>
