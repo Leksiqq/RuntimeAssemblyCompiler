@@ -1,13 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFrameworks>net8.0-windows;net6.0-windows</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RuntimeAssemblyCompiler</AssemblyName>
     <RootNamespace>Net.Leksi.RuntimeAssemblyCompiler</RootNamespace>
-    <PackageReleaseNotes>      1.5.5 Исправлена ошибка, возникающая при загрузке типа из скомпилированного проекта.
-      1.5.5 Fixed an error that occurred when loading a type from a compiled project.
+    <PackageReleaseNotes>      2.0.0 Проведён рефакторинг, удалено всё, что не пригодилось. Добавлена компиляция существующего проекта.
+      2.0.0 Refactoring was carried out, everything that was not useful was removed. Added compilation of an existing project.
 
       1.5.4 NET8.0-windows
 
@@ -78,7 +78,7 @@
     <When Condition=" '$(Configuration)'=='Release' ">
       <PropertyGroup>
         <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-        <Version>1.5.5</Version>
+        <Version>2.0.4</Version>
         <Authors>leksiq</Authors>
         <Title>Runtime Assembly Compiler</Title>
         <Description>
@@ -101,7 +101,7 @@
     </When>
   </Choose>
   <Target Name="CopyPackage" AfterTargets="Pack" Condition=" '$(Configuration)'=='Release' ">
-    <Move SourceFiles="$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg" DestinationFolder="W:\C#\nuget.local" />
+    <Move SourceFiles="$(OutputPath)\$(PackageId).$(PackageVersion).nupkg" DestinationFolder="W:\C#\nuget.local" />
   </Target>
   <ItemGroup>
     <None Include="..\README.md">

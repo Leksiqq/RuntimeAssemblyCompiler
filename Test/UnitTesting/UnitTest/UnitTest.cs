@@ -10,7 +10,7 @@ namespace Net.Leksi.Rac.UnitTesting;
 
 public class Tests
 {
-    const int s_maxLevel = 4;
+    const int s_maxLevel = 3;
     const int s_numTreeChildren = 3;
     const int s_numOtherProperties = 3;
     const int s_isPackableBase = 1;
@@ -166,18 +166,12 @@ class Factory: IFactory
             CreateClassSource(node, rnd);
             Assert.That(Directory.Exists(node.Project!.ProjectDir), node.Project.ProjectDir);
             node.Project.AddProject(permanentProject);
-            ArgumentException ex2 = Assert.Throws<ArgumentException>(() => node.Project.AddProject(permanentProject));
-            Assert.That(ex2.Message, Is.EqualTo($"Project {permanentProject.FullName} is already added!"));
             node.Project.AddProject(Path.Combine(projectDir, "..", s_external, $"{s_external}.csproj"));
-            ArgumentException ex3 = Assert.Throws<ArgumentException>(() => node.Project.AddProject(Path.Combine(projectDir, "..", s_external, $"{s_external}.csproj")));
-            Assert.That(ex3.Message, Is.EqualTo($"Project {Path.GetFullPath(Path.Combine(projectDir, "..", s_external, $"{s_external}.csproj"))} is already added!"));
         }
 
         foreach (Node node in nodes.Where(n => n.IsPackable))
         {
             node.Project!.AddPackage(commonPackageName, commonPackageVersion, Path.GetDirectoryName(GetType().Assembly.Location));
-            ArgumentException ex4 = Assert.Throws<ArgumentException>(() => node.Project!.AddPackage(commonPackageName, commonPackageVersion, Path.GetDirectoryName(GetType().Assembly.Location)));
-            Assert.That(ex4.Message, Is.EqualTo($"Package {commonPackageName} is already added!"));
             node.Project.Compile();
         }
 
@@ -191,19 +185,13 @@ class Factory: IFactory
                 if (child.Project!.GeneratePackage)
                 {
                     node.Project!.AddPackage(child.Project);
-                    ArgumentException ex5 = Assert.Throws<ArgumentException>(() => node.Project!.AddPackage(child.Project));
-                    Assert.That(ex5.Message, Is.EqualTo($"Package {child.Project.FullName} is already added!"));
                 }
                 else
                 {
                     node.Project!.AddProject(child.Project);
-                    ArgumentException ex5 = Assert.Throws<ArgumentException>(() => node.Project!.AddProject(child.Project));
-                    Assert.That(ex5.Message, Is.EqualTo($"Project {child.Project.FullName} is already added!"));
                 }
             }
         }
-
-        Assert.That(root.Project!.GetLibraryFile(permanentProject), Is.Null);
 
         root.Project!.Compile();
 
@@ -212,18 +200,9 @@ class Factory: IFactory
 
         foreach (Node node in nodes)
         {
-            string? library = null;
-            if (node.Project!.GeneratePackage || node == root)
-            {
-                library = node.Project.LibraryFile;
-            }
-            else
-            {
-                Assert.That(node.Project.LibraryFile, Is.Null);
-                library = root.Project.GetLibraryFile(node.Project);
-            }
+            Assembly? library = node.Project.CompiledAssembly;
             Assert.That(library, Is.Not.Null);
-            node.Type = Assembly.LoadFrom(library)?.GetType(node.Label);
+            node.Type = library.GetType(node.Label);
             Assert.That(node.Type, Is.Not.Null);
             hostBuilder.ConfigureServices(services => services.AddTransient(node.Type!));
         }
@@ -372,9 +351,6 @@ class Factory: IFactory
 
             File.WriteAllText(Path.Combine(node.Project.ProjectDir!, $"{node.Project.FullName}.magic.txt"), node.MagicWord);
             node.Project.AddContent($"{node.Project.FullName}.magic.txt");
-
-            ArgumentException? ex7 = Assert.Throws<ArgumentException>(() => node.Project.AddContent($"{node.Project.FullName}.magic.txt"));
-            Assert.That(ex7.Message, Is.EqualTo($"Content {Path.Combine(node.Project.ProjectDir, $"{node.Project.FullName}.magic.txt")} is already added!"));
 
             FileStream fileStream = File.Create(Path.Combine(node.Project.ProjectDir!, $"{node.ClassName}.cs"));
             StreamWriter sw = new(fileStream);

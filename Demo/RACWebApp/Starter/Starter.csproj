@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFrameworks>net8.0-windows;net6.0-windows</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RACWebApp.Starter</AssemblyName>
@@ -12,7 +12,7 @@
 
   <Target Name="BuildCommon" BeforeTargets="PreBuild">
     <Message Text="$(Configuration)" />
-    <MSBuild Projects="$(ProjectDir)\..\Common\Common.csproj" Properties="Configuration=$(Configuration);Platform=$(Platform)" />
+    <MSBuild Projects="$(MSBuildProjectDirectory)\..\Common\Common.csproj" Properties="Configuration=$(Configuration);Platform=$(Platform)" />
   </Target>
   
   <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
@@ -20,7 +20,7 @@
       <Output TaskParameter="Lines" PropertyName="CommonPackageVersion" />
     </ReadLinesFromFile>
     <Exec Command="dotnet remove $(ProjectPath) package $(CommonPackageName)" IgnoreExitCode="True" />
-    <Exec Command="dotnet add $(ProjectPath) package $(CommonPackageName) --version $(CommonPackageVersion) --source $(ProjectDir)" />
+    <Exec Command="dotnet add $(ProjectPath) package $(CommonPackageName) --version $(CommonPackageVersion) --source $(MSBuildProjectDirectory)" />
 
     <ItemGroup>
       <AssemblyAttribute Include="Net.Leksi.Demo.RACWebApp.Starter.MyAttribute">
@@ -36,8 +36,8 @@
   </Target>
   
   <ItemGroup>
-    <PackageReference Include="Net.Leksi.RACWebApp.Common" Version="1.0.18" />
-    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="1.5.5" />
+    <PackageReference Include="Net.Leksi.RACWebApp.Common" Version="1.0.21" />
+    <PackageReference Include="Net.Leksi.RuntimeAssemblyCompiler" Version="2.0.4" />
   </ItemGroup>
 
 </Project>
