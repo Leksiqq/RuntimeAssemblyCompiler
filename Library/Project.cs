@@ -10,8 +10,6 @@ namespace Net.Leksi.RuntimeAssemblyCompiler;
 
 public class Project : IDisposable
 {
-    public event MissedTypeEventHandler? MissedType;
-
     private const string s_defaultSdk = "Microsoft.NET.Sdk";
 
     private static string? s_appDataDirectory;
@@ -95,8 +93,7 @@ public class Project : IDisposable
     public bool IsVerbose { get; set; } = false;
     public Encoding LogEncoding { get; set; } = Encoding.UTF8;
     public string Configuration { get; private set; } = "RAC";
-    public string? LibraryFile { get; private set; } = null;
-    public string? ExeFile { get; private set; } = null;
+    public string? CompiledFile { get; private set; } = null;
     public OutputType OutputType { get; private set; } = OutputType.Library;
     public bool GeneratePackage { get; private set; } = false;
     public bool IsTemporary { get; private set; } = false;
@@ -280,16 +277,15 @@ public class Project : IDisposable
 
     public void AddPackage(string name, string version, string? source = null)
     {
-        if (_packages.Any(p => name.Equals(p.Name)))
+        if (!_packages.Any(p => name.Equals(p.Name)))
         {
-            throw new ArgumentException($"Package {name} is already added!");
+            _packages.Add(new PackageHolder
+            {
+                Name = name,
+                Version = version,
+                Source = source,
+            });
         }
-        _packages.Add(new PackageHolder
-        {
-            Name = name,
-            Version = version,
-            Source = source,
-        });
     }
 
     public void AddPackage(Project project)
@@ -303,20 +299,18 @@ public class Project : IDisposable
         {
             path = Path.GetFullPath(Path.Combine(ProjectDir, path));
         }
-        if (_projects.Any(p => path.Equals(p.Path)))
+        if (!_projects.Any(p => path.Equals(p.Path)))
         {
-            throw new ArgumentException($"Project {path} is already added!");
+            _projects.Add(new ProjectHolder { Path = path });
         }
-        _projects.Add(new ProjectHolder { Path = path });
     }
 
     public void AddProject(Project project)
     {
-        if (_projects.Any(p => project == p.Project))
+        if (!_projects.Any(p => project == p.Project))
         {
-            throw new ArgumentException($"Project {project.FullName} is already added!");
+            _projects.Add(new ProjectHolder { Project = project });
         }
-        _projects.Add(new ProjectHolder { Project = project });
     }
 
     public void AddContent(string path)
@@ -325,11 +319,10 @@ public class Project : IDisposable
         {
             path = Path.GetFullPath(Path.Combine(ProjectDir, path));
         }
-        if (_contents.Contains(path))
+        if (!_contents.Contains(path))
         {
-            throw new ArgumentException($"Content {path} is already added!");
+            _contents.Add(path);
         }
-        _contents.Add(path);
     }
 
     public void AddReference(string path)
@@ -338,120 +331,39 @@ public class Project : IDisposable
         {
             path = Path.GetFullPath(Path.Combine(ProjectDir, path));
         }
-        if (_references.Contains(path))
+        if (!_references.Contains(path))
         {
-            throw new ArgumentException($"Reference {path} is already added!");
+            _references.Add(path);
         }
-        _references.Add(path);
     }
 
-    public bool ContainsReference(string path)
+    public string? GetFile(string fileName)
     {
-        return _references.Contains(Path.GetFullPath(path));
-    }
-
-    public bool ContainsContent(string path)
-    {
-        return _contents.Contains(Path.GetFullPath(path));
-    }
-
-    public bool ContainsProject(string path)
-    {
-        path = Path.GetFullPath(path);
-        return _projects.Any(p => path.Equals(p.Path));
-    }
-
-    public bool ContainsProject(Project project)
-    {
-        return _projects.Any(p => project == p.Project);
-    }
-
-    public bool ContainsPackage(string name)
-    {
-        return _packages.Any(p => name.Equals(p.Name));
-    }
-
-    public bool ContainsPackage(Project project)
-    {
-        return ContainsPackage(project.FullName);
-    }
-
-    public string? GetLibraryFile(Project project)
-    {
-        string? result = _outDir is { } ? Path.Combine(_outDir!, $"{project.FullName}.dll") : null;
-        return result is { } && File.Exists(result) ? result : null;
-    }
-
-    public string? GetPackageFile(Project project)
-    {
-        string result = Path.Combine(_outDir!, "..", $"{project.FullName}.{s_version}.nupkg");
-        return File.Exists(result) ? result : null;
-    }
-
-    public string? GetLibraryFile(string path)
-    {
-        string? assemblyFile = null;
-        try
-        {
-            XmlDocument projectFile = new();
-            projectFile.Load(path);
-            if (projectFile.CreateNavigator()?.SelectSingleNode("/Project/PropertyGroup/AssemblyName") is XPathNavigator element)
-            {
-                assemblyFile = element.Value;
-            }
-            else
-            {
-                assemblyFile = Path.GetFileNameWithoutExtension(path);
-            }
-        }
-        catch (FileNotFoundException) { }
-        catch (XmlException) { }
-        if (string.IsNullOrEmpty(assemblyFile) && string.IsNullOrEmpty(Path.GetDirectoryName(path)))
-        {
-            assemblyFile = Path.Combine(_outDir, Path.GetFileNameWithoutExtension(path));
-        }
-        string result = Path.Combine(_outDir!, $"{assemblyFile}.dll");
+        string result = Path.Combine(_outDir!, fileName);
         return File.Exists(result) ? result : null;
     }
 
     public void Compile()
     {
-        for (int i = 0; i < 2; ++i)
-        {
-            DeleteLockFile();
+        DeleteLockFile();
 
-            LastBuildLog = string.Empty;
+        LastBuildLog = string.Empty;
 
-            _allContents = new HashSet<string>();
+        _allContents = new HashSet<string>();
 
-            GenerateProjectFile(this);
+        GenerateProjectFile(this);
 
-            if (
-                RunDotnet(
-                    $"build \"{ProjectPath}\" --configuration \"{Configuration}\"{(!string.IsNullOrEmpty(AdditionalDotnetOptions) ? $" {AdditionalDotnetOptions}" : string.Empty)}",
-                    i == 0
-                )
-            )
-            {
-                break;
-            }
-        }
+        RunDotnet(
+            $"build \"{ProjectPath}\" --configuration \"{Configuration}\"{(!string.IsNullOrEmpty(AdditionalDotnetOptions) ? $" {AdditionalDotnetOptions}" : string.Empty)}"
+        );
 
-        LibraryFile = Path.Combine(_outDir!, $"{FullName}.dll");
         if (OutputType is OutputType.Exe || OutputType is OutputType.WinExe)
         {
-            ExeFile = Path.Combine(_outDir!, $"{FullName}.exe");
+            CompiledFile = Path.Combine(_outDir!, $"{FullName}.exe");
         }
-        foreach (ProjectHolder ph in _projects)
+        else
         {
-            if (ph.Project is { })
-            {
-                AssemblyLoadContext.Default.LoadFromAssemblyPath(GetLibraryFile(ph.Project)!);
-            }
-            else
-            {
-                AssemblyLoadContext.Default.LoadFromAssemblyPath(GetLibraryFile(ph.Path!)!);
-            }
+            CompiledFile = Path.Combine(_outDir!, $"{FullName}.dll");
         }
         foreach(string refr in _references)
         {
@@ -686,7 +598,7 @@ public class Project : IDisposable
         xw.Close();
     }
 
-    private bool RunDotnet(string arguments, bool askMissedTypes = false)
+    private void RunDotnet(string arguments)
     {
         StringBuilder sbError = new();
         StringBuilder sbData = new();
@@ -746,66 +658,6 @@ public class Project : IDisposable
                 {
                     string file = match.Groups["file"].Value;
                     string code = match.Groups["code"].Value;
-                    int selector = 0;
-                    if (
-                        askMissedTypes
-                        && (
-                            (
-                                code.Equals(s_missedTypeCode)
-                                && (selector = 1) == selector
-                            )
-                            || (
-                                code.Equals(s_suggestAssemblyCode)
-                                && (selector = 2) == selector
-                            )
-                        )
-                    )
-                    {
-
-                        if (
-                            selector == 1
-                            && Regex.Match(e.Data, s_missedTypePattern) is Match match1
-                            && match1.Success
-                        )
-                        {
-                            string missedType = match1.Groups["type"].Value;
-                            if (FindProjectHolderByFile(file) is ProjectHolder ph)
-                            {
-                                ph.SuggestedAssemblies.TryAdd(missedType, null);
-                            }
-                        }
-                        else if (
-                            selector == 2
-                            && Regex.Match(e.Data, s_suggestAssemblyPattern) is Match match2
-                            && match2.Success
-                        )
-                        {
-                            string missedType = match2.Groups["type"].Value;
-                            string suggestedAssembly = match2.Groups["assembly"].Value;
-                            if (
-                                FindProjectHolderByFile(file) is ProjectHolder ph
-                                && (
-                                    !ph.SuggestedAssemblies.ContainsKey(missedType)
-                                    || ph.SuggestedAssemblies[missedType] is null
-                                )
-                            )
-                            {
-                                try
-                                {
-                                    Assembly ass = Assembly.Load(suggestedAssembly);
-                                    if (!ph.SuggestedAssemblies.ContainsKey(missedType))
-                                    {
-                                        ph.SuggestedAssemblies.Add(missedType, ass);
-                                    }
-                                    else
-                                    {
-                                        ph.SuggestedAssemblies[missedType] = ass;
-                                    }
-                                }
-                                catch { }
-                            }
-                        }
-                    }
                 }
             }
         };
@@ -825,47 +677,13 @@ public class Project : IDisposable
 
         if (dotnet.ExitCode != 0)
         {
-            bool changed = false;
-            foreach (ProjectHolder ph in _projects.Concat(new ProjectHolder[] { _thisProjectHolder }))
-            {
-                foreach (KeyValuePair<string, Assembly?> entry in ph.SuggestedAssemblies.Where(e => e.Value is null))
-                {
-                    MissedTypeEventArgs args = new MissedTypeEventArgs { MissedTypeName = entry.Key, Project = ph.Project! };
-                    ph.Project!.MissedType?.Invoke(args);
-                    if(args.Assembly is null && this != ph.Project)
-                    {
-                        MissedType?.Invoke(args);
-                    }
-                    if (args.Assembly is { })
-                    {
-                        ph.SuggestedAssemblies[entry.Key] = args.Assembly;
-                        changed = true;
-                    }
-                }
-                foreach (var g in ph.SuggestedAssemblies.Values.Where(v => v is { }).GroupBy(v => v))
-                {
-                    if (!ph.Project!.ContainsReference(g.Key!.Location))
-                    {
-                        ph.Project!.AddReference(g.Key!.Location);
-                        changed = true;
-                    }
-                }
-            }
-            if (!changed)
-            {
-                throw new InvalidOperationException($"Ended with errors: {(IsVerbose ? $"`dotnet {arguments}`" : LastBuildLog)}");
-            }
-            if (askMissedTypes)
-            {
-                return false;
-            }
+            throw new InvalidOperationException($"Ended with errors: {(IsVerbose ? $"`dotnet {arguments}`" : LastBuildLog)}");
         }
 
         if (throwAtWarnings)
         {
             throw new InvalidOperationException($"Ended with warnings {(IsVerbose ? $"`dotnet {arguments}`" : LastBuildLog)}");
         }
-        return true;
     }
 
     private ProjectHolder? FindProjectHolderByFile(string file)
