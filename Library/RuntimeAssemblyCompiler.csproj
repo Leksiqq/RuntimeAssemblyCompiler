@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFrameworks>net6.0-windows;net8.0-windows</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Net.Leksi.RuntimeAssemblyCompiler</AssemblyName>
@@ -75,7 +75,7 @@
     <When Condition=" '$(Configuration)'=='Release' ">
       <PropertyGroup>
         <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-        <Version>1.5.4</Version>
+        <Version>1.5.9</Version>
         <Authors>leksiq</Authors>
         <Title>Runtime Assembly Compiler</Title>
         <Description>
@@ -98,7 +98,7 @@
     </When>
   </Choose>
   <Target Name="CopyPackage" AfterTargets="Pack" Condition=" '$(Configuration)'=='Release' ">
-    <Move SourceFiles="$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg" DestinationFolder="W:\C#\nuget.local" />
+    <Move SourceFiles="$(OutputPath)\$(PackageId).$(PackageVersion).nupkg" DestinationFolder="W:\C#\nuget.local" />
   </Target>
   <ItemGroup>
     <None Include="..\README.md">

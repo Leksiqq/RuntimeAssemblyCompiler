@@ -15,7 +15,6 @@ internal class Program
         {
             Name = "Server",
             Sdk = "Microsoft.NET.Sdk.Web",
-            TargetFramework = "net8.0-windows",
             BuildOutputLang = "FR-fr",
         });
         server.IsVerbose = true;
@@ -39,7 +38,6 @@ public class Server: IServer
         {
             Name = "Config",
             Sdk = "Microsoft.NET.Sdk.Web",
-            TargetFramework = "net8.0-windows",
         });
         File.WriteAllText(Path.Combine(config.ProjectDir, "Configure.cs"), @"
 using System.Reflection;
@@ -77,7 +75,7 @@ Hello World!
         server.AddProject(config);
 
         server.Compile();
-        IServer web = (Activator.CreateInstance(Assembly.LoadFile(server.LibraryFile!).GetType("Server")!) as IServer)!;
+        IServer web = (Activator.CreateInstance(server.CompiledAssembly!.GetType("Server", true)!) as IServer)!;
         web.Run();
     }
 

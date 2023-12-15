@@ -11,6 +11,7 @@ namespace Net.Leksi.RuntimeAssemblyCompiler;
 public class Project : IDisposable
 {
     private const string s_defaultSdk = "Microsoft.NET.Sdk";
+    private const string s_modifyingExistingProject = "Modifying an existing project is forbidden!";
 
     private static string? s_appDataDirectory;
     private static bool s_isUnitTesting = false;
@@ -38,6 +39,8 @@ public class Project : IDisposable
 
     private string _lockFile = string.Empty;
     private string _outDir = null!;
+
+    private bool _fromExisting = false;
 
     public static bool IsUnitTesting
     {
@@ -93,7 +96,6 @@ public class Project : IDisposable
     public bool IsVerbose { get; set; } = false;
     public Encoding LogEncoding { get; set; } = Encoding.UTF8;
     public string Configuration { get; private set; } = "RAC";
-    public string? CompiledFile { get; private set; } = null;
     public OutputType OutputType { get; private set; } = OutputType.Library;
     public bool GeneratePackage { get; private set; } = false;
     public bool IsTemporary { get; private set; } = false;
@@ -105,6 +107,12 @@ public class Project : IDisposable
     public string BuildOutputLang { get; private set; } = "en";
     public string ProjectPath { get; private set; } = null!;
     public Action<Project>? OnProjectFileGenerated { get; set; } = null;
+    public Assembly? CompiledAssembly { 
+        get 
+        { 
+            return AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(_outDir, $"{FullName}.{(OutputType is OutputType.Library ? "dll" : "exe")}"));
+        } 
+    } 
 
     static Project()
     {
@@ -149,6 +157,33 @@ public class Project : IDisposable
         string name = string.Empty;
         string @namespace = string.Empty;
 
+
+        Project project = new()
+        {
+            Sdk = options.Sdk ?? s_defaultSdk,
+            TargetFramework = options.TargetFramework ??
+                $"net{Environment.Version.Major}.{Environment.Version.Minor}",
+            IsTemporary = options.ProjectDir is null,
+            ProjectDir = Path.GetFullPath(options.ProjectDir ?? GetTemporaryDirectory()),
+            PathToDotnetExe = Path.GetFullPath(GetPathToDotnetExe(options)),
+        };
+        project.ProcessName(options);
+        if (options.OutputType is OutputType outputType)
+        {
+            project.OutputType = outputType;
+        }
+        if (options.GeneratePackage is bool generatePackage)
+        {
+            project.GeneratePackage = generatePackage;
+        }
+        CopyOptions(options, project);
+        project.ProjectPath = Path.Combine(project.ProjectDir, $"{project.Name}.csproj");
+        project._lockFile = Path.Combine(project.ProjectDir, ".lock");
+        return project;
+    }
+
+    private void ProcessName(ProjectOptions options)
+    {
         if (!string.IsNullOrEmpty(options.FullName))
         {
             int pos = options.FullName.LastIndexOf('.');
@@ -158,12 +193,12 @@ public class Project : IDisposable
             }
             if (pos > 0)
             {
-                name = options.FullName.Substring(pos + 1);
-                @namespace = options.FullName.Substring(0, pos);
+                Name = options.FullName.Substring(pos + 1);
+                Namespace = options.FullName.Substring(0, pos);
             }
             else
             {
-                name = options.FullName;
+                Name = options.FullName;
             }
             if (!string.IsNullOrEmpty(options.Name))
             {
@@ -184,42 +219,21 @@ public class Project : IDisposable
             {
                 throw new ArgumentException($"{nameof(options)}.{nameof(options.Name)}");
             }
-            name = options.Name;
+            Name = options.Name;
             if (!string.IsNullOrEmpty(options.Namespace))
             {
-                @namespace = options.Namespace;
+                Namespace = options.Namespace;
+                FullName = $"{options.Namespace}.{options.Name}";
+            }
+            else
+            {
+                FullName = options.Name;
             }
         }
-        string? pathToDotnet = options.PathToDotnetExe;
-        if (string.IsNullOrEmpty(pathToDotnet))
-        {
-            Process where = new();
+    }
 
-            where.StartInfo = new ProcessStartInfo
-            {
-                FileName = "where.exe",
-                Arguments = "dotnet",
-                RedirectStandardOutput = true,
-            };
-            where.Start();
-            pathToDotnet = where.StandardOutput.ReadToEnd().Trim();
-        }
-        if (string.IsNullOrEmpty(pathToDotnet))
-        {
-            throw new InvalidOperationException($"dotnet.exe is not found. Make sure it is in PATH or set {nameof(ProjectOptions)}.{nameof(options.PathToDotnetExe)} property!");
-        }
-        Project project = new()
-        {
-            Name = name,
-            Namespace = @namespace,
-            FullName = $"{(string.IsNullOrEmpty(@namespace) ? string.Empty : $"{@namespace}.")}{name}",
-            Sdk = options.Sdk ?? s_defaultSdk,
-            TargetFramework = options.TargetFramework ??
-                $"net{Environment.Version.Major}.{Environment.Version.Minor}",
-            IsTemporary = options.ProjectDir is null,
-            ProjectDir = Path.GetFullPath(options.ProjectDir ?? GetTemporaryDirectory()),
-            PathToDotnetExe = Path.GetFullPath(pathToDotnet),
-        };
+    private static void CopyOptions(ProjectOptions options, Project project)
+    {
         if (!string.IsNullOrEmpty(options.BuildOutputLang))
         {
             project.BuildOutputLang = options.BuildOutputLang;
@@ -227,14 +241,6 @@ public class Project : IDisposable
         if (!string.IsNullOrEmpty(options.Configuration))
         {
             project.Configuration = options.Configuration;
-        }
-        if (options.OutputType is OutputType outputType)
-        {
-            project.OutputType = outputType;
-        }
-        if (options.GeneratePackage is bool generatePackage)
-        {
-            project.GeneratePackage = generatePackage;
         }
         if (!string.IsNullOrEmpty(options.AdditionalDotnetOptions))
         {
@@ -260,23 +266,56 @@ public class Project : IDisposable
         {
             project.OnProjectFileGenerated = options.OnProjectFileGenerated;
         }
-        project.ProjectPath = Path.Combine(project.ProjectDir, $"{project.Name}.csproj");
-        project._lockFile = Path.Combine(project.ProjectDir, ".lock");
-        return project;
+    }
+
+    private static string GetPathToDotnetExe(ProjectOptions options)
+    {
+        string? pathToDotnet = options.PathToDotnetExe;
+        if (string.IsNullOrEmpty(pathToDotnet))
+        {
+            Process where = new();
+
+            where.StartInfo = new ProcessStartInfo
+            {
+                FileName = "where.exe",
+                Arguments = "dotnet",
+                RedirectStandardOutput = true,
+            };
+            where.Start();
+            pathToDotnet = where.StandardOutput.ReadToEnd().Trim();
+        }
+        if (string.IsNullOrEmpty(pathToDotnet))
+        {
+            throw new InvalidOperationException($"dotnet.exe is not found. Make sure it is in PATH or set {nameof(ProjectOptions)}.{nameof(options.PathToDotnetExe)} property!");
+        }
+
+        return pathToDotnet;
     }
 
     public void Define(string symbol)
     {
+        if (_fromExisting)
+        {
+            throw new InvalidOperationException(s_modifyingExistingProject);
+        }
         _symbols.Add(symbol);
     }
 
     public void Undef(string symbol)
     {
+        if (_fromExisting)
+        {
+            throw new InvalidOperationException(s_modifyingExistingProject);
+        }
         _symbols.Remove(symbol);
     }
 
     public void AddPackage(string name, string version, string? source = null)
     {
+        if (_fromExisting)
+        {
+            throw new InvalidOperationException(s_modifyingExistingProject);
+        }
         if (!_packages.Any(p => name.Equals(p.Name)))
         {
             _packages.Add(new PackageHolder
@@ -295,6 +334,10 @@ public class Project : IDisposable
 
     public void AddProject(string path)
     {
+        if (_fromExisting)
+        {
+            throw new InvalidOperationException(s_modifyingExistingProject);
+        }
         if (!path.Equals(Path.GetFullPath(path)))
         {
             path = Path.GetFullPath(Path.Combine(ProjectDir, path));
@@ -307,6 +350,10 @@ public class Project : IDisposable
 
     public void AddProject(Project project)
     {
+        if (_fromExisting)
+        {
+            throw new InvalidOperationException(s_modifyingExistingProject);
+        }
         if (!_projects.Any(p => project == p.Project))
         {
             _projects.Add(new ProjectHolder { Project = project });
@@ -315,6 +362,10 @@ public class Project : IDisposable
 
     public void AddContent(string path)
     {
+        if (_fromExisting)
+        {
+            throw new InvalidOperationException(s_modifyingExistingProject);
+        }
         if (!path.Equals(Path.GetFullPath(path)))
         {
             path = Path.GetFullPath(Path.Combine(ProjectDir, path));
@@ -327,6 +378,10 @@ public class Project : IDisposable
 
     public void AddReference(string path)
     {
+        if (_fromExisting)
+        {
+            throw new InvalidOperationException(s_modifyingExistingProject);
+        }
         if (!path.Equals(Path.GetFullPath(path)))
         {
             path = Path.GetFullPath(Path.Combine(ProjectDir, path));
@@ -337,33 +392,102 @@ public class Project : IDisposable
         }
     }
 
-    public string? GetFile(string fileName)
+    public string? GetFile(string path)
     {
-        string result = Path.Combine(_outDir!, fileName);
-        return File.Exists(result) ? result : null;
+        string? result = Path.Combine(_outDir, path);
+        if (File.Exists(result))
+        {
+            return result;
+        }
+        return null;
+    }
+
+    public static Project Compile(string projectPath, ProjectOptions? options = null)
+    {
+        Project result = Project.FromExisting(projectPath, options);
+        result.Compile();
+        return result;
     }
 
     public void Compile()
     {
-        DeleteLockFile();
+        if (!_fromExisting)
+        {
+            DeleteLockFile();
+        }
 
         LastBuildLog = string.Empty;
 
         _allContents = new HashSet<string>();
 
-        GenerateProjectFile(this);
+        if (!_fromExisting)
+        {
+            GenerateProjectFile(this);
+        }
 
         RunDotnet(
             $"build \"{ProjectPath}\" --configuration \"{Configuration}\"{(!string.IsNullOrEmpty(AdditionalDotnetOptions) ? $" {AdditionalDotnetOptions}" : string.Empty)}"
         );
 
-        if (OutputType is OutputType.Exe || OutputType is OutputType.WinExe)
+        LoadAssemblies(_outDir);
+
+        foreach(var it in AssemblyLoadContext.Default.Assemblies)
         {
-            CompiledFile = Path.Combine(_outDir!, $"{FullName}.exe");
+            Console.WriteLine(it);
+        }
+    }
+
+    private static Project FromExisting(string projectPath, ProjectOptions? options = null)
+    {
+        options ??= new();
+        projectPath = Path.GetFullPath(projectPath);
+        XmlDocument proj = new();
+        proj.Load(projectPath);
+        XPathNavigator nav = proj.CreateNavigator()!;
+        Project result = new()
+        {
+            _fromExisting = true,
+            ProjectPath = projectPath,
+            ProjectDir = Path.GetDirectoryName(projectPath)!,
+            TargetFramework = nav.SelectSingleNode("/Project/PropertyGroup/TargetFramework")!.Value,
+            PathToDotnetExe = Path.GetFullPath(GetPathToDotnetExe(options)),
+            Sdk = nav.SelectSingleNode("/Project/@Sdk")!.Value,
+        };
+        CopyOptions(options, result);
+
+        if(nav.SelectSingleNode("/Project/PropertyGroup/AssemblyName") is XPathNavigator n2)
+        {
+            options.FullName = n2.Value;
         }
         else
         {
-            CompiledFile = Path.Combine(_outDir!, $"{FullName}.dll");
+            options.Name = Path.GetFileNameWithoutExtension(projectPath);
+        }
+
+        result.ProcessName(options);
+
+        result._outDir = Path.Combine(result.ProjectDir, "bin", result.Configuration, result.TargetFramework);
+
+        if (nav.SelectSingleNode("/Project/PropertyGroup/OutputType") is XPathNavigator n1)
+        {
+            result.OutputType = Enum.Parse<OutputType>(n1.Value);
+        }
+        return result;
+    }
+
+    private void LoadAssemblies(string path)
+    {
+        foreach (string file in Directory.GetFiles(path))
+        {
+            try
+            {
+                AssemblyLoadContext.Default.LoadFromAssemblyPath(file);
+            }
+            catch (BadImageFormatException) { }
+        }
+        foreach(string dir in Directory.GetDirectories(path))
+        {
+            LoadAssemblies(dir);
         }
     }
 
@@ -399,13 +523,16 @@ public class Project : IDisposable
 
     public void Dispose()
     {
-        if (IsTemporary && Directory.Exists(ProjectDir))
+        if (!_fromExisting)
         {
-            File.WriteAllText(Path.Combine(ProjectDir, s_disposedFile), string.Empty);
-        }
-        else if (!IsTemporary && File.Exists(_lockFile))
-        {
-            File.Delete(_lockFile);
+            if (IsTemporary && Directory.Exists(ProjectDir))
+            {
+                File.WriteAllText(Path.Combine(ProjectDir, s_disposedFile), string.Empty);
+            }
+            else if (!IsTemporary && File.Exists(_lockFile))
+            {
+                File.Delete(_lockFile);
+            }
         }
     }
 
