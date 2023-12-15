@@ -78,12 +78,11 @@
     <When Condition=" '$(Configuration)'=='Release' ">
       <PropertyGroup>
         <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-        <Version>2.0.4</Version>
+        <Version>2.0.5</Version>
         <Authors>leksiq</Authors>
         <Title>Runtime Assembly Compiler</Title>
         <Description>
-          Библиотека Net.Leksi.RuntimeAssemblyCompiler позволяет компилировать и загружать сборки во время работы приложения.
-          The Net.Leksi.RuntimeAssemblyCompiler library allows you to compile and load assemblies while your application is running.
+          Библиотека Net.Leksi.RuntimeAssemblyCompiler позволяет компилировать и загружать сборки во время работы приложения. The Net.Leksi.RuntimeAssemblyCompiler library allows you to compile and load assemblies while your application is running.
         </Description>
         <Copyright>Алексей Юрьевич Захаров &lt;leksi@leksi.net&gt;, 2023</Copyright>
         <PackageProjectUrl>https://github.com/Leksiqq/RuntimeAssemblyCompiler/wiki</PackageProjectUrl>
